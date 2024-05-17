@@ -1,10 +1,8 @@
 package cobs
 
 import (
-	"bufio"
 	"bytes"
 	"io"
-	"sync"
 	"testing"
 )
 
@@ -189,64 +187,47 @@ func TestWriter(t *testing.T) {
 }
 
 func TestStream(t *testing.T) {
-	var err error
-	var wg sync.WaitGroup
-
 	pr, pw := io.Pipe()
-	defer pw.Close()
 
 	go func() {
-		r := bufio.NewReader(pr)
+		defer pw.Close()
+		e := NewEncoder(pw)
 
-		var buf bytes.Buffer
-		d := NewDecoder(&buf)
-
-		for i := 0; ; i++ {
-			// Read until delimiter
-			tmp, err := r.ReadBytes(Delimiter)
+		for _, tc := range testCases {
+			_, err := e.Write(tc.dec)
 			if err != nil {
-				if err != io.EOF {
-					t.Errorf("pipe error: %v", err)
-				}
-				return
+				t.Errorf("stream encode error: %v", err)
+			}
+			err = e.Close()
+			if err != nil {
+				t.Errorf("stream close error: %v", err)
 			}
 
-			_, err = d.Write(tmp)
-			if err != EOD {
-				t.Error("stream decode EOD missing")
+			_, err = pw.Write([]byte{Delimiter})
+			if err != nil {
+				t.Errorf("stream delimiter error: %v", err)
 			}
-			if !bytes.Equal(buf.Bytes(), testCases[i].dec) {
-				t.Errorf("stream decode got %v, want %v", buf.Bytes(), testCases[i].dec)
-			}
-
-			buf.Reset()
-
-			t.Logf("stream decode %s", testCases[i].name)
-			wg.Done()
 		}
-
 	}()
 
-	e := NewEncoder(pw)
+	var buf bytes.Buffer
+	d := NewDecoder(&buf)
+
 	for _, tc := range testCases {
-		wg.Add(1)
+		_, err := io.Copy(d, pr)
 
-		_, err = e.Write(tc.dec)
-		if err != nil {
-			t.Errorf("stream encode error: %v", err)
-		}
-		err = e.Close()
-		if err != nil {
-			t.Errorf("stream close error: %v", err)
+		if err != EOD {
+			t.Error("stream decode EOD missing")
 		}
 
-		_, err = pw.Write([]byte{Delimiter})
-		if err != nil {
-			t.Errorf("stream delimiter error: %v", err)
+		if !bytes.Equal(buf.Bytes(), tc.dec) {
+			t.Errorf("stream decode got %v, want %v", buf.Bytes(), tc.dec)
 		}
+
+		buf.Reset()
+
+		t.Logf("stream decode %s", tc.name)
 	}
-
-	wg.Wait()
 }
 
 func FuzzEncodeDecode(f *testing.F) {
