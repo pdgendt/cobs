@@ -7,53 +7,53 @@ import (
 )
 
 var testCases = []struct {
-	name    string
+	name     string
 	dec, enc []byte
 }{
 	{
 		name: "Empty",
-		dec:   []byte{},
-		enc:   []byte{0x01},
+		dec:  []byte{},
+		enc:  []byte{0x01},
 	},
 	{
 		name: "1 character",
-		dec:   []byte{'1'},
-		enc:   []byte{0x02, '1'},
+		dec:  []byte{'1'},
+		enc:  []byte{0x02, '1'},
 	},
 	{
 		name: "1 zero",
-		dec:   []byte{0x00},
-		enc:   []byte{0x01, 0x01},
+		dec:  []byte{0x00},
+		enc:  []byte{0x01, 0x01},
 	},
 	{
 		name: "2 zeroes",
-		dec:   []byte{0x00, 0x00},
-		enc:   []byte{0x01, 0x01, 0x01},
+		dec:  []byte{0x00, 0x00},
+		enc:  []byte{0x01, 0x01, 0x01},
 	},
 	{
 		name: "3 zeroes",
-		dec:   []byte{0x00, 0x00, 0x00},
-		enc:   []byte{0x01, 0x01, 0x01, 0x01},
+		dec:  []byte{0x00, 0x00, 0x00},
+		enc:  []byte{0x01, 0x01, 0x01, 0x01},
 	},
 	{
 		name: "5 characters",
-		dec:   []byte("12345"),
-		enc:   []byte("\x0612345"),
+		dec:  []byte("12345"),
+		enc:  []byte("\x0612345"),
 	},
 	{
 		name: "Embedded zero",
-		dec:   []byte("12345\x006789"),
-		enc:   []byte("\x0612345\x056789"),
+		dec:  []byte("12345\x006789"),
+		enc:  []byte("\x0612345\x056789"),
 	},
 	{
 		name: "Starting and embedded zero",
-		dec:   []byte("\x0012345\x006789"),
-		enc:   []byte("\x01\x0612345\x056789"),
+		dec:  []byte("\x0012345\x006789"),
+		enc:  []byte("\x01\x0612345\x056789"),
 	},
 	{
 		name: "Embedded and trailing zero",
-		dec:   []byte("12345\x006789\x00"),
-		enc:   []byte("\x0612345\x056789\x01"),
+		dec:  []byte("12345\x006789\x00"),
+		enc:  []byte("\x0612345\x056789\x01"),
 	},
 	{
 		name: "253 non-zero bytes",
