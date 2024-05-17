@@ -10,26 +10,17 @@ import (
 
 func main() {
 	delimiter := flag.Bool("del", false, "Append a delimiter")
-
 	flag.Parse()
 
 	enc := cobs.NewEncoder(os.Stdout)
-	for {
-		tmp := make([]byte, 1024)
-		n, err := os.Stdin.Read(tmp)
-		if err == io.EOF {
-			break
-		}
-		if err != nil {
-			panic(err)
-		}
-		
-		_, err = enc.Write(tmp[:n])
-		if err != nil {
-			panic(err)
-		}
+
+	if _, err := io.Copy(enc, os.Stdin); err != nil {
+		panic(err)
 	}
-	enc.Close()
+
+	if err := enc.Close(); err != nil {
+		panic(err)
+	}
 
 	if *delimiter {
 		os.Stdout.Write([]byte{cobs.Delimiter})
