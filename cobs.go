@@ -1,3 +1,5 @@
+// Package cobs implements Consistent Overhead Byte Stuffing (COBS) encoding and decoding algorithms
+// for efficient, reliable and unambiguous packet framing.
 package cobs
 
 import (
@@ -7,24 +9,32 @@ import (
 )
 
 const (
-	Delimiter = byte(0x00)
+	Delimiter = byte(0x00) // packet framing delimiter.
 )
 
+// EOD is the error returned when decoding and a delimiter was written.
+// Functions return EOD to signal a graceful end of a frame.
 var EOD = errors.New("EOD")
 
+// ErrUnexpectedEOD means that a delimiter was encountered in a malformed frame.
 var ErrUnexpectedEOD = errors.New("unexpected EOD")
 
+// An Encoder implements the io.Writer and io.ByteWriter interfaces. Data
+// written will we be encoded into groups and forwarded.
 type Encoder struct {
 	w   io.Writer
 	buf []byte
 }
 
+// An Decoder implements the io.Writer and io.ByteWriter interfaces. Data
+// written will we be decoded and forwarded byte per byte.
 type Decoder struct {
 	w         io.Writer
 	code      byte
 	codeIndex byte
 }
 
+// NewEncoder returns an Encoder that writes encoded data to w.
 func NewEncoder(w io.Writer) *Encoder {
 	e := new(Encoder)
 
@@ -50,6 +60,8 @@ func (e *Encoder) finish() (err error) {
 	return nil
 }
 
+// WriteByte encodes a single byte c. If a group is finished
+// it is written to w.
 func (e *Encoder) WriteByte(c byte) error {
 	// Finish if block is full
 	if e.buf[0] == 0xff {
@@ -68,6 +80,7 @@ func (e *Encoder) WriteByte(c byte) error {
 	return nil
 }
 
+// Write will call WriteByte for each byte in p.
 func (e *Encoder) Write(p []byte) (int, error) {
 	for i, c := range p {
 		if err := e.WriteByte(c); err != nil {
@@ -78,10 +91,13 @@ func (e *Encoder) Write(p []byte) (int, error) {
 	return len(p), nil
 }
 
+// Close has to be called after writing a full frame and
+// will write the last group.
 func (e *Encoder) Close() error {
 	return e.finish()
 }
 
+// Encode encodes and returns a byte slice.
 func Encode(data []byte) (enc []byte, err error) {
 	// Reserve a buffer with overhead room
 	buf := bytes.NewBuffer(make([]byte, 0, len(data) + (len(data) + 253) / 254))
@@ -96,6 +112,7 @@ func Encode(data []byte) (enc []byte, err error) {
 	return buf.Bytes(), err
 }
 
+// NewDecoder returns a Decoder that writes decoded data to w.
 func NewDecoder(w io.Writer) *Decoder {
 	d := new(Decoder)
 
@@ -106,6 +123,8 @@ func NewDecoder(w io.Writer) *Decoder {
 	return d
 }
 
+// WriteByte decodes a single byte c. If c is a delimiter the decoder
+// state is validated and either EOD or ErrUnexpectedEOD is returned.
 func (d *Decoder) WriteByte(c byte) error {
 	// Got a delimiter
 	if c == Delimiter {
@@ -142,6 +161,7 @@ func (d *Decoder) WriteByte(c byte) error {
 	return nil
 }
 
+// Write will call WriteByte for each byte in p.
 func (d *Decoder) Write(p []byte) (int, error) {
 	for i, c := range p {
 		if err := d.WriteByte(c); err != nil {
@@ -152,6 +172,7 @@ func (d *Decoder) Write(p []byte) (int, error) {
 	return len(p), nil
 }
 
+// Decode decodes and returns a byte slice.
 func Decode(data []byte) ([]byte, error) {
 	buf := bytes.NewBuffer(make([]byte, 0, len(data)))
 	d := NewDecoder(buf)
