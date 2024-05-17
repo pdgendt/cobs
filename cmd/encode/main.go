@@ -1,3 +1,15 @@
+/*
+Encode reads from standard input, and writes the encoded data to standard output.
+
+Usage:
+
+    encode [flags]
+
+The flags are:
+
+    -del
+        Append the encoded data with a (zero) delimiter.
+*/
 package main
 
 import (
