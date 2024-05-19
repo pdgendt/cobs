@@ -39,7 +39,7 @@ func NewEncoder(w io.Writer) *Encoder {
 	e := new(Encoder)
 
 	e.w = w
-	// Create a buffer with maximum capacity for a block
+	// Create a buffer with maximum capacity for a group
 	e.buf = make([]byte, 1, 255)
 	e.buf[0] = 1
 
@@ -61,7 +61,7 @@ func (e *Encoder) finish() error {
 // WriteByte encodes a single byte c. If a group is finished
 // it is written to w.
 func (e *Encoder) WriteByte(c byte) error {
-	// Finish if block is full
+	// Finish if group is full
 	if e.buf[0] == 0xff {
 		if err := e.finish(); err != nil {
 			return err
