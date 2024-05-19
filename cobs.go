@@ -46,11 +46,9 @@ func NewEncoder(w io.Writer) *Encoder {
 	return e
 }
 
-func (e *Encoder) finish() (err error) {
-	for i, n := 0, 0; i < len(e.buf); i += n {
-		if n, err = e.w.Write(e.buf[i:]); err != nil {
-			return err
-		}
+func (e *Encoder) finish() error {
+	if _, err := e.w.Write(e.buf); err != nil {
+		return err
 	}
 
 	// reset buffer
