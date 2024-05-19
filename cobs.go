@@ -96,16 +96,16 @@ func (e *Encoder) Close() error {
 }
 
 // Encode encodes and returns a byte slice.
-func Encode(data []byte) (enc []byte, err error) {
+func Encode(data []byte) ([]byte, error) {
 	// Reserve a buffer with overhead room
 	buf := bytes.NewBuffer(make([]byte, 0, len(data) + (len(data) + 253) / 254))
 	e := NewEncoder(buf)
 
-	if _, err = e.Write(data); err != nil {
+	if _, err := e.Write(data); err != nil {
 		return buf.Bytes(), err
 	}
 
-	err = e.Close()
+	err := e.Close()
 
 	return buf.Bytes(), err
 }
