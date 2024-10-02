@@ -26,7 +26,7 @@ type Encoder struct {
 	buf []byte
 }
 
-// An Decoder implements the io.Writer and io.ByteWriter interfaces. Data
+// A Decoder implements the io.Writer and io.ByteWriter interfaces. Data
 // written will we be decoded and forwarded byte per byte.
 type Decoder struct {
 	w         io.Writer
