@@ -166,7 +166,8 @@ func TestWriter(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			buf := bytes.NewBuffer(make([]byte, 0, len(tc.enc)))
-			e := NewEncoder(NewDecoder(buf))
+			d := NewDecoder(buf)
+			e := NewEncoder(d)
 
 			n, err := e.Write(tc.dec)
 			if err != nil {
@@ -175,6 +176,9 @@ func TestWriter(t *testing.T) {
 			err = e.Close()
 			if err != nil {
 				t.Errorf("writer close error: %v", err)
+			}
+			if d.NeedsMoreData() {
+				t.Error("writer incomplete decode data")
 			}
 			if n != len(tc.dec) {
 				t.Errorf("writer length got %d, want %d", n, len(tc.dec))
@@ -220,6 +224,10 @@ func TestStream(t *testing.T) {
 			t.Error("stream decode EOD missing")
 		}
 
+		if d.NeedsMoreData() {
+			t.Error("stream decode frame incomplete")
+		}
+
 		if !bytes.Equal(buf.Bytes(), tc.dec) {
 			t.Errorf("stream decode got %v, want %v", buf.Bytes(), tc.dec)
 		}
@@ -259,7 +267,8 @@ func FuzzChainWriter(f *testing.F) {
 	}
 	f.Fuzz(func(t *testing.T, a []byte) {
 		var buf bytes.Buffer
-		e := NewEncoder(NewDecoder(&buf))
+		d := NewDecoder(&buf)
+		e := NewEncoder(d)
 
 		n, err := e.Write(a)
 		if err != nil {
@@ -272,6 +281,9 @@ func FuzzChainWriter(f *testing.F) {
 		err = e.Close()
 		if err != nil {
 			t.Errorf("fuzz chain close error: %v", err)
+		}
+		if d.NeedsMoreData() {
+			t.Error("fuzz chain incomplete decode data")
 		}
 		if !bytes.Equal(buf.Bytes(), a) {
 			t.Errorf("fuzz chain got %v want %v", buf.Bytes(), a)
