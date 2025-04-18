@@ -316,6 +316,31 @@ func TestDecodeIncomplete(t *testing.T) {
 	}
 }
 
+var unexpectedDelimiter = []struct {
+	name string
+	data []byte
+}{
+	{
+		name: "Missing byte before delimiter",
+		data: []byte{0x02, 0x00},
+	},
+	{
+		name: "Unexpected embedded zero",
+		data: []byte("\x061234\x005\x056789"),
+	},
+}
+
+func TestDecodeUnexpectedEOD(t *testing.T) {
+	for _, tc := range unexpectedDelimiter {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := Decode(tc.data)
+			if err != ErrUnexpectedEOD {
+				t.Errorf("Unexpected decode EOD error: %v", err)
+			}
+		})
+	}
+}
+
 // https://github.com/golang/go/issues/54111
 type LimitedWriter struct {
 	W   io.Writer // underlying writer
