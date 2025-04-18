@@ -9,3 +9,6 @@ comment:
   hide_project_coverage: false
   branches:
     - "main"
+
+ignore:
+  - "cmd/" # Ignore trivial wrapper commands
