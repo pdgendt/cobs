@@ -1,12 +1,15 @@
 # COBS
 
+[![Go version](https://img.shields.io/github/go-mod/go-version/pdgendt/cobs)](https://pkg.go.dev/github.com/pdgendt/cobs)
+[![Code coverage](https://codecov.io/github/pdgendt/cobs/graph/badge.svg?token=CMGPE2NO89)](https://codecov.io/github/pdgendt/cobs)
+
 A Golang module for the
 [Consistent Overhead Byte Stuffing (COBS)](https://en.wikipedia.org/wiki/Consistent_Overhead_Byte_Stuffing)
-algorithm. 
+algorithm.
 
 ## Usage
 
-This module provides both simple helper functions to Encode/Decode `[]byte` arrays and 
+This module provides both simple helper functions to Encode/Decode `[]byte` arrays and
 Encoder/Decoder structs to stream bytes to an `io.Writer` instance.
 
 ### `Encode`/`Decode` functions
