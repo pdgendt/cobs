@@ -278,3 +278,57 @@ func FuzzChainWriter(f *testing.F) {
 		}
 	})
 }
+
+// https://github.com/golang/go/issues/54111
+type LimitedWriter struct {
+	W   io.Writer // underlying writer
+	N   int64     // max bytes remaining
+	Err error     // error to be returned once limit is reached
+}
+
+func (lw *LimitedWriter) Write(p []byte) (int, error) {
+	if lw.N < 1 {
+		return 0, lw.Err
+	}
+	if lw.N < int64(len(p)) {
+		p = p[:lw.N]
+	}
+	n, err := lw.W.Write(p)
+	lw.N -= int64(n)
+	return n, err
+}
+
+func TestEncodeError(t *testing.T) {
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			e := NewEncoder(&LimitedWriter{io.Discard, 0, io.EOF})
+
+			_, err := e.Write(tc.dec)
+			// err can be nil if no groups have been flushed, call close
+			if err == nil {
+				err = e.Close()
+			}
+			if err != io.EOF {
+				t.Errorf("Unexpected error: %v", err)
+			}
+		})
+	}
+}
+
+func TestDecodeError(t *testing.T) {
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			// The empty string is expected to have no writes
+			if len(tc.dec) == 0 {
+				t.SkipNow()
+			}
+
+			d := NewDecoder(&LimitedWriter{io.Discard, 0, io.EOF})
+
+			_, err := d.Write(tc.enc)
+			if err != io.EOF {
+				t.Errorf("Unexpected error: %v", err)
+			}
+		})
+	}
+}
