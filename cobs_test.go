@@ -291,6 +291,31 @@ func FuzzChainWriter(f *testing.F) {
 	})
 }
 
+var incompleteFrame = []struct {
+	name string
+	data []byte
+}{
+	{
+		name: "Missing single byte",
+		data: []byte{0x02},
+	},
+	{
+		name: "2 zeroes and missing end",
+		data: []byte{0x01, 0x01, 0x05},
+	},
+}
+
+func TestDecodeIncomplete(t *testing.T) {
+	for _, tc := range incompleteFrame {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := Decode(tc.data)
+			if err != ErrIncompleteFrame {
+				t.Errorf("Unexpected decode incomplete error: %v", err)
+			}
+		})
+	}
+}
+
 // https://github.com/golang/go/issues/54111
 type LimitedWriter struct {
 	W   io.Writer // underlying writer
