@@ -19,6 +19,9 @@ var EOD = errors.New("EOD")
 // ErrUnexpectedEOD means that a delimiter was encountered in a malformed frame.
 var ErrUnexpectedEOD = errors.New("unexpected EOD")
 
+// ErrIncompleteData means a decoder was closed with an incomplete frame.
+var ErrIncompleteFrame = errors.New("frame incomplete")
+
 // An Encoder implements the io.Writer and io.ByteWriter interfaces. Data
 // written will we be encoded into groups and forwarded.
 type Encoder struct {
@@ -170,12 +173,23 @@ func (d *Decoder) Write(p []byte) (int, error) {
 	return len(p), nil
 }
 
+// NeedsMoreData returns true if the decoder needs more data for a full frame.
+func (d *Decoder) NeedsMoreData() bool {
+	return d.codeIndex != 0
+}
+
 // Decode decodes and returns a byte slice.
 func Decode(data []byte) ([]byte, error) {
 	buf := bytes.NewBuffer(make([]byte, 0, len(data)))
 	d := NewDecoder(buf)
 
-	_, err := d.Write(data)
+	if _, err := d.Write(data); err != nil {
+		return buf.Bytes(), err
+	}
 
-	return buf.Bytes(), err
+	if d.NeedsMoreData() {
+		return buf.Bytes(), ErrIncompleteFrame
+	}
+
+	return buf.Bytes(), nil
 }

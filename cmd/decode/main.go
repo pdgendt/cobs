@@ -23,4 +23,8 @@ func main() {
 	if _, err := io.Copy(dec, os.Stdin); err != nil && err != cobs.EOD {
 		panic(err)
 	}
+
+	if dec.NeedsMoreData() {
+		panic(cobs.ErrIncompleteFrame)
+	}
 }
