@@ -69,6 +69,23 @@ func main() {
 }
 ```
 
+### Sentinel Value
+
+By default, COBS uses `0x00` (zero) as the sentinel value - the special byte that never
+appears in encoded data and is used for packet framing. You can configure a custom sentinel
+value using the `WithSentinel()` option. This is useful when your protocol already uses
+zero bytes, or when you need a different delimiter for packet framing.
+
+```go
+// Use 0xFF as the sentinel instead of 0x00
+enc := cobs.NewEncoder(w, cobs.WithSentinel(0xFF))
+dec := cobs.NewDecoder(w, cobs.WithSentinel(0xFF))
+
+// Or with the helper functions
+encoded, _ := cobs.Encode(data, cobs.WithSentinel(0xFF))
+decoded, _ := cobs.Decode(encoded, cobs.WithSentinel(0xFF))
+```
+
 ## CLI tools
 
 The [cmd/](cmd/) directory contains simple encode/decode command line tools that take in data
@@ -80,3 +97,16 @@ This can be used to pipe encoded/decoded data to other processes.
 $ echo "Hello world" | go run cmd/encode/main.go | go run cmd/decode/main.go
 Hello world
 ```
+
+### Custom Sentinel in CLI
+
+Both `encode` and `decode` commands support the `-s` (or `-sentinel`) flag to specify a custom
+sentinel value:
+
+```shell
+$ echo "Hello world" | go run cmd/encode/main.go -s 0xFF | go run cmd/decode/main.go -s 0xFF
+Hello world
+```
+
+The `encode` command also supports the `-d` (or `-del`) flag to append the sentinel delimiter
+after the encoded data.
