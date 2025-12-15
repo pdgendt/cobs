@@ -2,6 +2,7 @@ package cobs
 
 import (
 	"bytes"
+	"fmt"
 	"io"
 	"testing"
 )
@@ -9,51 +10,141 @@ import (
 var testCases = []struct {
 	name     string
 	dec, enc []byte
+	sentinel byte
 }{
 	{
-		name: "Empty",
-		dec:  []byte{},
-		enc:  []byte{0x01},
+		name:     "Empty",
+		dec:      []byte{},
+		enc:      []byte{0x01},
+		sentinel: Delimiter,
 	},
 	{
-		name: "1 character",
-		dec:  []byte{'1'},
-		enc:  []byte{0x02, '1'},
+		name:     "Empty",
+		dec:      []byte{},
+		enc:      []byte{0x00},
+		sentinel: 0x01,
 	},
 	{
-		name: "1 zero",
-		dec:  []byte{0x00},
-		enc:  []byte{0x01, 0x01},
+		name:     "Empty",
+		dec:      []byte{},
+		enc:      []byte{0x00},
+		sentinel: 0xFF,
 	},
 	{
-		name: "2 zeroes",
-		dec:  []byte{0x00, 0x00},
-		enc:  []byte{0x01, 0x01, 0x01},
+		name:     "1 character",
+		dec:      []byte{'1'},
+		enc:      []byte{0x02, '1'},
+		sentinel: Delimiter,
 	},
 	{
-		name: "3 zeroes",
-		dec:  []byte{0x00, 0x00, 0x00},
-		enc:  []byte{0x01, 0x01, 0x01, 0x01},
+		name:     "1 character",
+		dec:      []byte{'1'},
+		enc:      []byte{0x01, 0x31},
+		sentinel: 0xFF,
 	},
 	{
-		name: "5 characters",
-		dec:  []byte("12345"),
-		enc:  []byte("\x0612345"),
+		name:     "1 character",
+		dec:      []byte{'A'},
+		enc:      []byte{0x01, 0x41},
+		sentinel: 0x7F,
 	},
 	{
-		name: "Embedded zero",
-		dec:  []byte("12345\x006789"),
-		enc:  []byte("\x0612345\x056789"),
+		name:     "1 zero",
+		dec:      []byte{0x00},
+		enc:      []byte{0x01, 0x01},
+		sentinel: Delimiter,
 	},
 	{
-		name: "Starting and embedded zero",
-		dec:  []byte("\x0012345\x006789"),
-		enc:  []byte("\x01\x0612345\x056789"),
+		name:     "1 sentinel byte (0xFF)",
+		dec:      []byte{0xFF},
+		enc:      []byte{0x00, 0x00},
+		sentinel: 0xFF,
 	},
 	{
-		name: "Embedded and trailing zero",
-		dec:  []byte("12345\x006789\x00"),
-		enc:  []byte("\x0612345\x056789\x01"),
+		name:     "1 sentinel byte (0x01)",
+		dec:      []byte{0x01},
+		enc:      []byte{0x00, 0x00},
+		sentinel: 0x01,
+	},
+	{
+		name:     "2 zeroes",
+		dec:      []byte{0x00, 0x00},
+		enc:      []byte{0x01, 0x01, 0x01},
+		sentinel: Delimiter,
+	},
+	{
+		name:     "2 sentinel bytes (0xFF)",
+		dec:      []byte{0xFF, 0xFF},
+		enc:      []byte{0x00, 0x00, 0x00},
+		sentinel: 0xFF,
+	},
+	{
+		name:     "3 zeroes",
+		dec:      []byte{0x00, 0x00, 0x00},
+		enc:      []byte{0x01, 0x01, 0x01, 0x01},
+		sentinel: Delimiter,
+	},
+	{
+		name:     "5 characters",
+		dec:      []byte("12345"),
+		enc:      []byte("\x0612345"),
+		sentinel: Delimiter,
+	},
+	{
+		name:     "5 characters",
+		dec:      []byte{'1', '2', '3', '4', '5'},
+		enc:      []byte{0x05, 0x31, 0x32, 0x33, 0x34, 0x35},
+		sentinel: 0xFF,
+	},
+	{
+		name:     "Embedded zero",
+		dec:      []byte("12345\x006789"),
+		enc:      []byte("\x0612345\x056789"),
+		sentinel: Delimiter,
+	},
+	{
+		name:     "Embedded sentinel (0xFF)",
+		dec:      []byte{'1', '2', '3', '4', '5', 0xFF, '6', '7', '8', '9'},
+		enc:      []byte{0x05, 0x31, 0x32, 0x33, 0x34, 0x35, 0x04, 0x36, 0x37, 0x38, 0x39},
+		sentinel: 0xFF,
+	},
+	{
+		name:     "Multiple embedded 0xFF",
+		dec:      []byte{'A', 'B', 0xFF, 'C', 'D', 0xFF, 'E', 'F'},
+		enc:      []byte{0x02, 0x41, 0x42, 0x02, 0x43, 0x44, 0x02, 0x45, 0x46},
+		sentinel: 0xFF,
+	},
+	{
+		name:     "Starting and embedded zero",
+		dec:      []byte("\x0012345\x006789"),
+		enc:      []byte("\x01\x0612345\x056789"),
+		sentinel: Delimiter,
+	},
+	{
+		name: "Starting and embedded sentinel (0xFF)",
+		dec:  []byte{0xFF, '1', '2', '3', '4', '5', 0xFF, '6', '7', '8', '9'},
+		enc: []byte{0x00, 0x05, 0x31, 0x32, 0x33, 0x34, 0x35, 0x04, 0x36, 0x37, 0x38,
+			0x39},
+		sentinel: 0xFF,
+	},
+	{
+		name:     "Embedded and trailing zero",
+		dec:      []byte("12345\x006789\x00"),
+		enc:      []byte("\x0612345\x056789\x01"),
+		sentinel: Delimiter,
+	},
+	{
+		name: "Embedded and trailing sentinel (0xFF)",
+		dec:  []byte{'1', '2', '3', '4', '5', 0xFF, '6', '7', '8', '9', 0xFF},
+		enc: []byte{0x05, 0x31, 0x32, 0x33, 0x34, 0x35, 0x04, 0x36, 0x37, 0x38, 0x39,
+			0x00},
+		sentinel: 0xFF,
+	},
+	{
+		name:     "Starting, embedded and trailing sentinel (0xFF)",
+		dec:      []byte{0xFF, '1', '2', 0xFF, '3', '4', 0xFF},
+		enc:      []byte{0x00, 0x02, 0x31, 0x32, 0x02, 0x33, 0x34, 0x00},
+		sentinel: 0xFF,
 	},
 	{
 		name: "253 non-zero bytes",
@@ -65,6 +156,7 @@ var testCases = []struct {
 			"CDEFGHIJKLMNOPQRSTabcdefghijklmnopqrst0123456789ABCDEFGHIJKLMNOPQRSTab" +
 			"cdefghijklmnopqrst0123456789ABCDEFGHIJKLMNOPQRSTabcdefghijklmnopqrst01" +
 			"23456789ABCDEFGHIJKLMNOPQRSTabcdefghijklmnopqrst123"),
+		sentinel: Delimiter,
 	},
 	{
 		name: "254 non-zero bytes",
@@ -76,6 +168,7 @@ var testCases = []struct {
 			"CDEFGHIJKLMNOPQRSTabcdefghijklmnopqrst0123456789ABCDEFGHIJKLMNOPQRSTab" +
 			"cdefghijklmnopqrst0123456789ABCDEFGHIJKLMNOPQRSTabcdefghijklmnopqrst01" +
 			"23456789ABCDEFGHIJKLMNOPQRSTabcdefghijklmnopqrst1234"),
+		sentinel: Delimiter,
 	},
 	{
 		name: "255 non-zero bytes",
@@ -87,6 +180,7 @@ var testCases = []struct {
 			"CDEFGHIJKLMNOPQRSTabcdefghijklmnopqrst0123456789ABCDEFGHIJKLMNOPQRSTab" +
 			"cdefghijklmnopqrst0123456789ABCDEFGHIJKLMNOPQRSTabcdefghijklmnopqrst01" +
 			"23456789ABCDEFGHIJKLMNOPQRSTabcdefghijklmnopqrst1234\x025"),
+		sentinel: Delimiter,
 	},
 	{
 		name: "zero followed by 255 non-zero bytes",
@@ -98,6 +192,7 @@ var testCases = []struct {
 			"89ABCDEFGHIJKLMNOPQRSTabcdefghijklmnopqrst0123456789ABCDEFGHIJKLMNOPQR" +
 			"STabcdefghijklmnopqrst0123456789ABCDEFGHIJKLMNOPQRSTabcdefghijklmnopqr" +
 			"st0123456789ABCDEFGHIJKLMNOPQRSTabcdefghijklmnopqrst1234\x025"),
+		sentinel: Delimiter,
 	},
 	{
 		name: "253 non-zero bytes followed by zero",
@@ -109,6 +204,7 @@ var testCases = []struct {
 			"CDEFGHIJKLMNOPQRSTabcdefghijklmnopqrst0123456789ABCDEFGHIJKLMNOPQRSTab" +
 			"cdefghijklmnopqrst0123456789ABCDEFGHIJKLMNOPQRSTabcdefghijklmnopqrst01" +
 			"23456789ABCDEFGHIJKLMNOPQRSTabcdefghijklmnopqrst123\x01"),
+		sentinel: Delimiter,
 	},
 	{
 		name: "254 non-zero bytes followed by zero",
@@ -120,6 +216,7 @@ var testCases = []struct {
 			"CDEFGHIJKLMNOPQRSTabcdefghijklmnopqrst0123456789ABCDEFGHIJKLMNOPQRSTab" +
 			"cdefghijklmnopqrst0123456789ABCDEFGHIJKLMNOPQRSTabcdefghijklmnopqrst01" +
 			"23456789ABCDEFGHIJKLMNOPQRSTabcdefghijklmnopqrst1234\x01\x01"),
+		sentinel: Delimiter,
 	},
 	{
 		name: "255 non-zero bytes followed by zero",
@@ -131,13 +228,26 @@ var testCases = []struct {
 			"CDEFGHIJKLMNOPQRSTabcdefghijklmnopqrst0123456789ABCDEFGHIJKLMNOPQRSTab" +
 			"cdefghijklmnopqrst0123456789ABCDEFGHIJKLMNOPQRSTabcdefghijklmnopqrst01" +
 			"23456789ABCDEFGHIJKLMNOPQRSTabcdefghijklmnopqrst1234\x025\x01"),
+		sentinel: Delimiter,
+	},
+	{
+		name:     "All 0xFF bytes",
+		dec:      []byte{0xFF, 0xFF, 0xFF, 0xFF, 0xFF},
+		enc:      []byte{0x00, 0x00, 0x00, 0x00, 0x00, 0x00},
+		sentinel: 0xFF,
+	},
+	{
+		name:     "Alternating 0xFF and non-0xFF",
+		dec:      []byte{0xFF, 'A', 0xFF, 'B', 0xFF},
+		enc:      []byte{0x00, 0x01, 0x41, 0x01, 0x42, 0x00},
+		sentinel: 0xFF,
 	},
 }
 
 func TestEncode(t *testing.T) {
 	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
-			enc, err := Encode(tc.dec)
+		t.Run(fmt.Sprintf("%s (%d)", tc.name, tc.sentinel), func(t *testing.T) {
+			enc, err := Encode(tc.dec, WithSentinel(tc.sentinel))
 			if err != nil {
 				t.Errorf("encode error: %v", err)
 			}
@@ -150,8 +260,8 @@ func TestEncode(t *testing.T) {
 
 func TestDecode(t *testing.T) {
 	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
-			dec, err := Decode(tc.enc)
+		t.Run(fmt.Sprintf("%s (%d)", tc.name, tc.sentinel), func(t *testing.T) {
+			dec, err := Decode(tc.enc, WithSentinel(tc.sentinel))
 			if err != nil {
 				t.Errorf("decode error: %v", err)
 			}
@@ -163,30 +273,33 @@ func TestDecode(t *testing.T) {
 }
 
 func TestWriter(t *testing.T) {
+	// This test has to work with all sentinel values (encoded buffer is not compared)
 	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
-			buf := bytes.NewBuffer(make([]byte, 0, len(tc.enc)))
-			d := NewDecoder(buf)
-			e := NewEncoder(d)
+		for s := 0; s <= 255; s++ {
+			t.Run(fmt.Sprintf("%s (%d)", tc.name, s), func(t *testing.T) {
+				buf := bytes.NewBuffer(make([]byte, 0, len(tc.enc)))
+				d := NewDecoder(buf, WithSentinel(byte(s)))
+				e := NewEncoder(d, WithSentinel(byte(s)))
 
-			n, err := e.Write(tc.dec)
-			if err != nil {
-				t.Errorf("writer error: %v", err)
-			}
-			err = e.Close()
-			if err != nil {
-				t.Errorf("writer close error: %v", err)
-			}
-			if d.NeedsMoreData() {
-				t.Error("writer incomplete decode data")
-			}
-			if n != len(tc.dec) {
-				t.Errorf("writer length got %d, want %d", n, len(tc.dec))
-			}
-			if !bytes.Equal(buf.Bytes(), tc.dec) {
-				t.Errorf("got %v, want %v", buf.Bytes(), tc.dec)
-			}
-		})
+				n, err := e.Write(tc.dec)
+				if err != nil {
+					t.Errorf("writer error: %v", err)
+				}
+				err = e.Close()
+				if err != nil {
+					t.Errorf("writer close error: %v", err)
+				}
+				if d.NeedsMoreData() {
+					t.Error("writer incomplete decode data")
+				}
+				if n != len(tc.dec) {
+					t.Errorf("writer length got %d, want %d", n, len(tc.dec))
+				}
+				if !bytes.Equal(buf.Bytes(), tc.dec) {
+					t.Errorf("got %v, want %v", buf.Bytes(), tc.dec)
+				}
+			})
+		}
 	}
 }
 
@@ -195,9 +308,9 @@ func TestStream(t *testing.T) {
 
 	go func() {
 		defer pw.Close()
-		e := NewEncoder(pw)
 
 		for _, tc := range testCases {
+			e := NewEncoder(pw, WithSentinel(tc.sentinel))
 			_, err := e.Write(tc.dec)
 			if err != nil {
 				t.Errorf("stream encode error: %v", err)
@@ -207,7 +320,7 @@ func TestStream(t *testing.T) {
 				t.Errorf("stream close error: %v", err)
 			}
 
-			_, err = pw.Write([]byte{Delimiter})
+			_, err = pw.Write([]byte{tc.sentinel})
 			if err != nil {
 				t.Errorf("stream delimiter error: %v", err)
 			}
@@ -215,9 +328,9 @@ func TestStream(t *testing.T) {
 	}()
 
 	var buf bytes.Buffer
-	d := NewDecoder(&buf)
 
 	for _, tc := range testCases {
+		d := NewDecoder(&buf, WithSentinel(tc.sentinel))
 		_, err := io.Copy(d, pr)
 
 		if err != EOD {
@@ -240,18 +353,20 @@ func TestStream(t *testing.T) {
 
 func FuzzEncodeDecode(f *testing.F) {
 	for _, tc := range testCases {
-		f.Add(tc.dec)
+		for s := 0; s <= 255; s++ {
+			f.Add(tc.dec, byte(s))
+		}
 	}
-	f.Fuzz(func(t *testing.T, a []byte) {
-		enc, err := Encode(a)
+	f.Fuzz(func(t *testing.T, a []byte, del byte) {
+		enc, err := Encode(a, WithSentinel(del))
 		if err != nil {
 			t.Errorf("fuzz encode error: %v", err)
 		}
-		if i := bytes.IndexByte(enc, Delimiter); i != -1 {
-			t.Errorf("fuzz encode %v has delimiter at %d", enc, i)
+		if i := bytes.IndexByte(enc, del); i != -1 {
+			t.Errorf("fuzz encode %v has sentinel at %d", enc, i)
 		}
 
-		dec, err := Decode(enc)
+		dec, err := Decode(enc, WithSentinel(del))
 		if err != nil {
 			t.Errorf("fuzz decode error: %v", err)
 		}
@@ -263,12 +378,14 @@ func FuzzEncodeDecode(f *testing.F) {
 
 func FuzzChainWriter(f *testing.F) {
 	for _, tc := range testCases {
-		f.Add(tc.dec)
+		for del := 0; del <= 255; del++ {
+			f.Add(tc.dec, byte(del))
+		}
 	}
-	f.Fuzz(func(t *testing.T, a []byte) {
+	f.Fuzz(func(t *testing.T, a []byte, del byte) {
 		var buf bytes.Buffer
-		d := NewDecoder(&buf)
-		e := NewEncoder(d)
+		d := NewDecoder(&buf, WithSentinel(del))
+		e := NewEncoder(d, WithSentinel(del))
 
 		n, err := e.Write(a)
 		if err != nil {
@@ -362,8 +479,10 @@ func (lw *LimitedWriter) Write(p []byte) (int, error) {
 
 func TestEncodeError(t *testing.T) {
 	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
-			e := NewEncoder(&LimitedWriter{io.Discard, 0, io.EOF})
+		t.Run(fmt.Sprintf("%s (%d)", tc.name, tc.sentinel), func(t *testing.T) {
+			e := NewEncoder(
+				&LimitedWriter{io.Discard, 0, io.EOF},
+				WithSentinel(tc.sentinel))
 
 			_, err := e.Write(tc.dec)
 			// err can be nil if no groups have been flushed, call close
@@ -379,13 +498,15 @@ func TestEncodeError(t *testing.T) {
 
 func TestDecodeError(t *testing.T) {
 	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
+		t.Run(fmt.Sprintf("%s (%d)", tc.name, tc.sentinel), func(t *testing.T) {
 			// The empty string is expected to have no writes
 			if len(tc.dec) == 0 {
 				t.SkipNow()
 			}
 
-			d := NewDecoder(&LimitedWriter{io.Discard, 0, io.EOF})
+			d := NewDecoder(
+				&LimitedWriter{io.Discard, 0, io.EOF},
+				WithSentinel(tc.sentinel))
 
 			_, err := d.Write(tc.enc)
 			if err != io.EOF {
