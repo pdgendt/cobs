@@ -22,43 +22,55 @@ var ErrUnexpectedEOD = errors.New("unexpected EOD")
 // ErrIncompleteData means a decoder was closed with an incomplete frame.
 var ErrIncompleteFrame = errors.New("frame incomplete")
 
+type config struct {
+	sentinel byte
+}
+
+type option func(*config)
+
+// WithSentinel configures the encoder/decoder to use a custom sentinel value.
+func WithSentinel(sentinel byte) option {
+	return func(c *config) {
+		c.sentinel = sentinel
+	}
+}
+
 // An Encoder implements the io.Writer and io.ByteWriter interfaces. Data
 // written will we be encoded into groups and forwarded.
 type Encoder struct {
-	w         io.Writer
-	buf       []byte
-	delimiter byte
+	config
+	w   io.Writer
+	buf []byte
 }
 
 // A Decoder implements the io.Writer and io.ByteWriter interfaces. Data
 // written will we be decoded and forwarded byte per byte.
 type Decoder struct {
+	config
 	w         io.Writer
 	code      byte
 	codeIndex byte
-	delimiter byte
 }
 
-func maxCode(delimiter byte) byte {
-	if delimiter == 0xff {
+func maxCode(sentinel byte) byte {
+	if sentinel == 0xff {
 		return 0xfe
 	}
 	return 0xff
 }
 
-// NewEncoder returns an Encoder that writes encoded data to w using the default delimiter (0x00).
-func NewEncoder(w io.Writer) *Encoder {
-	return NewEncoderWithDelimiter(w, Delimiter)
-}
+// NewEncoder returns an Encoder that writes encoded data to w.
+func NewEncoder(w io.Writer, opts ...option) *Encoder {
+	e := &Encoder{
+		config: config{sentinel: Delimiter},
+		w:      w,
+		// Create a buffer with maximum capacity for a group
+		buf: make([]byte, 1, 255),
+	}
+	for _, opt := range opts {
+		opt(&e.config)
+	}
 
-// NewEncoderWithDelimiter returns an Encoder that writes encoded data to w using a custom delimiter.
-func NewEncoderWithDelimiter(w io.Writer, delimiter byte) *Encoder {
-	e := new(Encoder)
-
-	e.w = w
-	e.delimiter = delimiter
-	// Create a buffer with maximum capacity for a group
-	e.buf = make([]byte, 1, 255)
 	e.buf[0] = 0
 	e.checkLen()
 
@@ -79,7 +91,7 @@ func (e *Encoder) finish() error {
 }
 
 func (e *Encoder) checkLen() {
-	if e.buf[0] == e.delimiter {
+	if e.buf[0] == e.sentinel {
 		e.buf[0]++
 	}
 }
@@ -88,13 +100,13 @@ func (e *Encoder) checkLen() {
 // it is written to w.
 func (e *Encoder) WriteByte(c byte) error {
 	// Finish if group is full
-	if e.buf[0] == maxCode(e.delimiter) {
+	if e.buf[0] == maxCode(e.sentinel) {
 		if err := e.finish(); err != nil {
 			return err
 		}
 	}
 
-	if c == e.delimiter {
+	if c == e.sentinel {
 		return e.finish()
 	}
 
@@ -122,16 +134,11 @@ func (e *Encoder) Close() error {
 	return e.finish()
 }
 
-// Encode encodes with the default delimiter (0x00) and returns a byte slice.
-func Encode(data []byte) ([]byte, error) {
-	return EncodeWithDelimiter(data, Delimiter)
-}
-
 // Encode encodes and returns a byte slice.
-func EncodeWithDelimiter(data []byte, delimiter byte) ([]byte, error) {
+func Encode(data []byte, opts ...option) ([]byte, error) {
 	// Reserve a buffer with overhead room
 	buf := bytes.NewBuffer(make([]byte, 0, len(data)+(len(data)+253)/254))
-	e := NewEncoderWithDelimiter(buf, delimiter)
+	e := NewEncoder(buf, opts...)
 
 	if _, err := e.Write(data); err != nil {
 		return buf.Bytes(), err
@@ -142,34 +149,33 @@ func EncodeWithDelimiter(data []byte, delimiter byte) ([]byte, error) {
 	return buf.Bytes(), err
 }
 
-// NewDecoder returns a Decoder that writes decoded data to w using the default delimiter (0x00).
-func NewDecoder(w io.Writer) *Decoder {
-	return NewDecoderWithDelimiter(w, Delimiter)
-}
+// NewDecoder returns a Decoder that writes decoded data to w.
+func NewDecoder(w io.Writer, opts ...option) *Decoder {
+	d := &Decoder{
+		config:    config{sentinel: Delimiter},
+		w:         w,
+		codeIndex: 0,
+	}
+	for _, opt := range opts {
+		opt(&d.config)
+	}
 
-// NewDecoderWithDelimiter returns a Decoder that writes decoded data to w using a custom delimiter.
-func NewDecoderWithDelimiter(w io.Writer, delimiter byte) *Decoder {
-	d := new(Decoder)
-
-	d.w = w
-	d.delimiter = delimiter
-	d.code = maxCode(d.delimiter)
-	d.codeIndex = 0
+	d.code = maxCode(d.sentinel)
 
 	return d
 }
 
-// WriteByte decodes a single byte c. If c is a delimiter the decoder
+// WriteByte decodes a single byte c. If c is the sentinel value the decoder
 // state is validated and either EOD or ErrUnexpectedEOD is returned.
 func (d *Decoder) WriteByte(c byte) error {
-	// Got a delimiter
-	if c == d.delimiter {
+	// Got a sentinel
+	if c == d.sentinel {
 		if d.codeIndex != 0 {
 			return ErrUnexpectedEOD
 		}
 
 		// Reset state
-		d.code = maxCode(d.delimiter)
+		d.code = maxCode(d.sentinel)
 
 		return EOD
 	}
@@ -185,15 +191,15 @@ func (d *Decoder) WriteByte(c byte) error {
 
 	d.codeIndex = c
 
-	if d.code != maxCode(d.delimiter) {
-		if _, err := d.w.Write([]byte{d.delimiter}); err != nil {
+	if d.code != maxCode(d.sentinel) {
+		if _, err := d.w.Write([]byte{d.sentinel}); err != nil {
 			return err
 		}
 	}
 
 	d.code = d.codeIndex
-	// If our encoded length is larger than the delimiter, we need to subtract one.
-	if d.codeIndex > d.delimiter {
+	// If our encoded length is larger than the sentinel, we need to subtract one.
+	if d.codeIndex > d.sentinel {
 		d.codeIndex--
 	}
 
@@ -216,15 +222,10 @@ func (d *Decoder) NeedsMoreData() bool {
 	return d.codeIndex != 0
 }
 
-// Decode decodes with the default delimiter (0x00) and returns a byte slice.
-func Decode(data []byte) ([]byte, error) {
-	return DecodeWithDelimiter(data, Delimiter)
-}
-
 // Decode decodes and returns a byte slice.
-func DecodeWithDelimiter(data []byte, delimiter byte) ([]byte, error) {
+func Decode(data []byte, opts ...option) ([]byte, error) {
 	buf := bytes.NewBuffer(make([]byte, 0, len(data)))
-	d := NewDecoderWithDelimiter(buf, delimiter)
+	d := NewDecoder(buf, opts...)
 
 	if _, err := d.Write(data); err != nil {
 		return buf.Bytes(), err
