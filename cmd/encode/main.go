@@ -12,6 +12,8 @@ The flags are:
 
 	-s/-sentinel
 	    Use a custom sentinel value (default is 0x00).
+
+	-r/-reduced
 */
 package main
 
@@ -26,12 +28,15 @@ import (
 
 var appendDelim bool
 var sentinel int
+var reduced bool
 
 func init() {
 	flag.BoolVar(&appendDelim, "del", false, "Append a delimiter")
 	flag.BoolVar(&appendDelim, "d", false, "Append a delimiter")
 	flag.IntVar(&sentinel, "sentinel", int(cobs.Delimiter), "Sentinel value (default is 0x00)")
 	flag.IntVar(&sentinel, "s", int(cobs.Delimiter), "Sentinel value (default is 0x00)")
+	flag.BoolVar(&reduced, "reduced", false, "Use COBS reduced (COBS/R)")
+	flag.BoolVar(&reduced, "r", false, "Use COBS reduced (COBS/R)")
 }
 
 func main() {
@@ -43,7 +48,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	enc := cobs.NewEncoder(os.Stdout, cobs.WithSentinel(byte(sentinel)))
+	enc := cobs.NewEncoder(os.Stdout, cobs.WithSentinel(byte(sentinel)), cobs.WithReduced(reduced))
 
 	if _, err := io.Copy(enc, os.Stdin); err != nil {
 		panic(err)
