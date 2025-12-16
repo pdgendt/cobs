@@ -7,11 +7,15 @@ import (
 	"testing"
 )
 
-var testCases = []struct {
+type testCase struct {
 	name     string
-	dec, enc []byte
+	enc      []byte
+	dec      []byte
 	sentinel byte
-}{
+	reduced  bool
+}
+
+var testCases = []testCase{
 	{
 		name:     "Empty",
 		dec:      []byte{},
@@ -246,8 +250,11 @@ var testCases = []struct {
 
 func TestEncode(t *testing.T) {
 	for _, tc := range testCases {
-		t.Run(fmt.Sprintf("%s (%d)", tc.name, tc.sentinel), func(t *testing.T) {
-			enc, err := Encode(tc.dec, WithSentinel(tc.sentinel))
+		t.Run(fmt.Sprintf("%#v", tc), func(t *testing.T) {
+			enc, err := Encode(
+				tc.dec,
+				WithSentinel(tc.sentinel),
+				WithReduced(tc.reduced))
 			if err != nil {
 				t.Errorf("encode error: %v", err)
 			}
@@ -260,8 +267,11 @@ func TestEncode(t *testing.T) {
 
 func TestDecode(t *testing.T) {
 	for _, tc := range testCases {
-		t.Run(fmt.Sprintf("%s (%d)", tc.name, tc.sentinel), func(t *testing.T) {
-			dec, err := Decode(tc.enc, WithSentinel(tc.sentinel))
+		t.Run(fmt.Sprintf("%#v", tc), func(t *testing.T) {
+			dec, err := Decode(
+				tc.enc,
+				WithSentinel(tc.sentinel),
+				WithReduced(tc.reduced))
 			if err != nil {
 				t.Errorf("decode error: %v", err)
 			}
@@ -275,30 +285,36 @@ func TestDecode(t *testing.T) {
 func TestWriter(t *testing.T) {
 	// This test has to work with all sentinel values (encoded buffer is not compared)
 	for _, tc := range testCases {
-		for s := 0; s <= 255; s++ {
-			t.Run(fmt.Sprintf("%s (%d)", tc.name, s), func(t *testing.T) {
-				buf := bytes.NewBuffer(make([]byte, 0, len(tc.enc)))
-				d := NewDecoder(buf, WithSentinel(byte(s)))
-				e := NewEncoder(d, WithSentinel(byte(s)))
+		for _, reduced := range []bool{false, true} {
+			for s := 0; s <= 255; s++ {
+				t.Run(fmt.Sprintf("%s (%d)", tc.name, s), func(t *testing.T) {
+					buf := bytes.NewBuffer(make([]byte, 0, len(tc.enc)))
+					d := NewDecoder(buf, WithSentinel(byte(s)), WithReduced(reduced))
+					e := NewEncoder(d, WithSentinel(byte(s)), WithReduced(reduced))
 
-				n, err := e.Write(tc.dec)
-				if err != nil {
-					t.Errorf("writer error: %v", err)
-				}
-				err = e.Close()
-				if err != nil {
-					t.Errorf("writer close error: %v", err)
-				}
-				if d.NeedsMoreData() {
-					t.Error("writer incomplete decode data")
-				}
-				if n != len(tc.dec) {
-					t.Errorf("writer length got %d, want %d", n, len(tc.dec))
-				}
-				if !bytes.Equal(buf.Bytes(), tc.dec) {
-					t.Errorf("got %v, want %v", buf.Bytes(), tc.dec)
-				}
-			})
+					n, err := e.Write(tc.dec)
+					if err != nil {
+						t.Errorf("writer error: %v", err)
+					}
+					err = e.Close()
+					if err != nil {
+						t.Errorf("encoder close error: %v", err)
+					}
+					err = d.Close()
+					if err != nil {
+						t.Errorf("decoder close error: %v", err)
+					}
+					if d.NeedsMoreData() {
+						t.Error("writer incomplete decode data")
+					}
+					if n != len(tc.dec) {
+						t.Errorf("writer length got %d, want %d", n, len(tc.dec))
+					}
+					if !bytes.Equal(buf.Bytes(), tc.dec) {
+						t.Errorf("got %v, want %v", buf.Bytes(), tc.dec)
+					}
+				})
+			}
 		}
 	}
 }
@@ -310,14 +326,14 @@ func TestStream(t *testing.T) {
 		defer pw.Close()
 
 		for _, tc := range testCases {
-			e := NewEncoder(pw, WithSentinel(tc.sentinel))
+			e := NewEncoder(pw, WithSentinel(tc.sentinel), WithReduced(tc.reduced))
 			_, err := e.Write(tc.dec)
 			if err != nil {
 				t.Errorf("stream encode error: %v", err)
 			}
 			err = e.Close()
 			if err != nil {
-				t.Errorf("stream close error: %v", err)
+				t.Errorf("stream encoder close error: %v", err)
 			}
 
 			_, err = pw.Write([]byte{tc.sentinel})
@@ -330,11 +346,17 @@ func TestStream(t *testing.T) {
 	var buf bytes.Buffer
 
 	for _, tc := range testCases {
-		d := NewDecoder(&buf, WithSentinel(tc.sentinel))
+		d := NewDecoder(&buf, WithSentinel(tc.sentinel), WithReduced(tc.reduced))
 		_, err := io.Copy(d, pr)
 
 		if err != EOD {
 			t.Error("stream decode EOD missing")
+		}
+
+		// It should be safe to call close, as we already received an EOD
+		err = d.Close()
+		if err != nil {
+			t.Errorf("stream decoder close error: %v", err)
 		}
 
 		if d.NeedsMoreData() {
@@ -354,11 +376,12 @@ func TestStream(t *testing.T) {
 func FuzzEncodeDecode(f *testing.F) {
 	for _, tc := range testCases {
 		for s := 0; s <= 255; s++ {
-			f.Add(tc.dec, byte(s))
+			f.Add(tc.dec, byte(s), false)
+			f.Add(tc.dec, byte(s), true)
 		}
 	}
-	f.Fuzz(func(t *testing.T, a []byte, del byte) {
-		enc, err := Encode(a, WithSentinel(del))
+	f.Fuzz(func(t *testing.T, a []byte, del byte, reduced bool) {
+		enc, err := Encode(a, WithSentinel(del), WithReduced(reduced))
 		if err != nil {
 			t.Errorf("fuzz encode error: %v", err)
 		}
@@ -366,12 +389,12 @@ func FuzzEncodeDecode(f *testing.F) {
 			t.Errorf("fuzz encode %v has sentinel at %d", enc, i)
 		}
 
-		dec, err := Decode(enc, WithSentinel(del))
+		dec, err := Decode(enc, WithSentinel(del), WithReduced(reduced))
 		if err != nil {
 			t.Errorf("fuzz decode error: %v", err)
 		}
 		if !bytes.Equal(dec, a) {
-			t.Errorf("fuzz decode got %v want %v", dec, a)
+			t.Errorf("fuzz decode got %v want %v (enc %v)", dec, a, enc)
 		}
 	})
 }
@@ -379,13 +402,14 @@ func FuzzEncodeDecode(f *testing.F) {
 func FuzzChainWriter(f *testing.F) {
 	for _, tc := range testCases {
 		for del := 0; del <= 255; del++ {
-			f.Add(tc.dec, byte(del))
+			f.Add(tc.dec, byte(del), false)
+			f.Add(tc.dec, byte(del), true)
 		}
 	}
-	f.Fuzz(func(t *testing.T, a []byte, del byte) {
+	f.Fuzz(func(t *testing.T, a []byte, del byte, reduced bool) {
 		var buf bytes.Buffer
-		d := NewDecoder(&buf, WithSentinel(del))
-		e := NewEncoder(d, WithSentinel(del))
+		d := NewDecoder(&buf, WithSentinel(del), WithReduced(reduced))
+		e := NewEncoder(d, WithSentinel(del), WithReduced(reduced))
 
 		n, err := e.Write(a)
 		if err != nil {
@@ -397,7 +421,11 @@ func FuzzChainWriter(f *testing.F) {
 
 		err = e.Close()
 		if err != nil {
-			t.Errorf("fuzz chain close error: %v", err)
+			t.Errorf("fuzz chain encoder close error: %v", err)
+		}
+		err = d.Close()
+		if err != nil {
+			t.Errorf("fuzz chain decoder close error: %v", err)
 		}
 		if d.NeedsMoreData() {
 			t.Error("fuzz chain incomplete decode data")
@@ -479,10 +507,11 @@ func (lw *LimitedWriter) Write(p []byte) (int, error) {
 
 func TestEncodeError(t *testing.T) {
 	for _, tc := range testCases {
-		t.Run(fmt.Sprintf("%s (%d)", tc.name, tc.sentinel), func(t *testing.T) {
+		t.Run(fmt.Sprintf("%#v", tc), func(t *testing.T) {
 			e := NewEncoder(
 				&LimitedWriter{io.Discard, 0, io.EOF},
-				WithSentinel(tc.sentinel))
+				WithSentinel(tc.sentinel),
+				WithReduced(tc.reduced))
 
 			_, err := e.Write(tc.dec)
 			// err can be nil if no groups have been flushed, call close
@@ -498,7 +527,7 @@ func TestEncodeError(t *testing.T) {
 
 func TestDecodeError(t *testing.T) {
 	for _, tc := range testCases {
-		t.Run(fmt.Sprintf("%s (%d)", tc.name, tc.sentinel), func(t *testing.T) {
+		t.Run(fmt.Sprintf("%#v", tc), func(t *testing.T) {
 			// The empty string is expected to have no writes
 			if len(tc.dec) == 0 {
 				t.SkipNow()
@@ -506,9 +535,13 @@ func TestDecodeError(t *testing.T) {
 
 			d := NewDecoder(
 				&LimitedWriter{io.Discard, 0, io.EOF},
-				WithSentinel(tc.sentinel))
+				WithSentinel(tc.sentinel),
+				WithReduced(tc.reduced))
 
 			_, err := d.Write(tc.enc)
+			if err == nil {
+				err = d.Close()
+			}
 			if err != io.EOF {
 				t.Errorf("Unexpected error: %v", err)
 			}
