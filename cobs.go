@@ -24,6 +24,7 @@ var ErrIncompleteFrame = errors.New("frame incomplete")
 
 type config struct {
 	sentinel byte
+	reduced  bool
 }
 
 type option func(*config)
@@ -32,6 +33,13 @@ type option func(*config)
 func WithSentinel(sentinel byte) option {
 	return func(c *config) {
 		c.sentinel = sentinel
+	}
+}
+
+// WithReduced configures the encoder/decoder to run COBS/R.
+func WithReduced(enabled bool) option {
+	return func(c *config) {
+		c.reduced = enabled
 	}
 }
 
@@ -77,7 +85,16 @@ func NewEncoder(w io.Writer, opts ...option) *Encoder {
 	return e
 }
 
-func (e *Encoder) finish() error {
+func (e *Encoder) finish(last bool) error {
+	// From https://pythonhosted.org/cobs/cobsr-intro.html
+	// Replace the overhead byte with the last data byte if it is larger than
+	// the running buffer size.
+	if last && e.reduced && len(e.buf) > 1 && e.buf[0] < e.buf[len(e.buf)-1] {
+		// Put the last element as the overhead byte
+		e.buf[0] = e.buf[len(e.buf)-1]
+		e.buf = e.buf[:len(e.buf)-1]
+	}
+
 	if _, err := e.w.Write(e.buf); err != nil {
 		return err
 	}
@@ -101,13 +118,13 @@ func (e *Encoder) checkLen() {
 func (e *Encoder) WriteByte(c byte) error {
 	// Finish if group is full
 	if e.buf[0] == maxCode(e.sentinel) {
-		if err := e.finish(); err != nil {
+		if err := e.finish(false); err != nil {
 			return err
 		}
 	}
 
 	if c == e.sentinel {
-		return e.finish()
+		return e.finish(false)
 	}
 
 	e.buf = append(e.buf, c)
@@ -131,7 +148,7 @@ func (e *Encoder) Write(p []byte) (int, error) {
 // Close has to be called after writing a full frame and
 // will write the last group.
 func (e *Encoder) Close() error {
-	return e.finish()
+	return e.finish(true)
 }
 
 // Encode encodes and returns a byte slice.
@@ -165,11 +182,29 @@ func NewDecoder(w io.Writer, opts ...option) *Decoder {
 	return d
 }
 
+func (d *Decoder) flushReduced() error {
+	// Check if we are decoding a reduced buffer
+	if d.reduced && d.codeIndex > 0 {
+		_, err := d.w.Write([]byte{d.code})
+		if err != nil {
+			return err
+		}
+		d.codeIndex = 0
+	}
+
+	return nil
+}
+
 // WriteByte decodes a single byte c. If c is the sentinel value the decoder
 // state is validated and either EOD or ErrUnexpectedEOD is returned.
 func (d *Decoder) WriteByte(c byte) error {
 	// Got a sentinel
 	if c == d.sentinel {
+		err := d.flushReduced()
+		if err != nil {
+			return err
+		}
+
 		if d.codeIndex != 0 {
 			return ErrUnexpectedEOD
 		}
@@ -217,6 +252,21 @@ func (d *Decoder) Write(p []byte) (int, error) {
 	return len(p), nil
 }
 
+// Close flushes the last byte in case of COBS reduced (COBS/R) and will return the
+// ErrIncompleteFrame if trailing data is missing.
+func (d *Decoder) Close() error {
+	err := d.flushReduced()
+	if err != nil {
+		return err
+	}
+
+	if d.NeedsMoreData() {
+		return ErrIncompleteFrame
+	}
+
+	return nil
+}
+
 // NeedsMoreData returns true if the decoder needs more data for a full frame.
 func (d *Decoder) NeedsMoreData() bool {
 	return d.codeIndex != 0
@@ -231,9 +281,7 @@ func Decode(data []byte, opts ...option) ([]byte, error) {
 		return buf.Bytes(), err
 	}
 
-	if d.NeedsMoreData() {
-		return buf.Bytes(), ErrIncompleteFrame
-	}
+	err := d.Close()
 
-	return buf.Bytes(), nil
+	return buf.Bytes(), err
 }
