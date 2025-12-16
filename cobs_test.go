@@ -4,6 +4,11 @@ import (
 	"bytes"
 	"fmt"
 	"io"
+	"os"
+	"path/filepath"
+	"regexp"
+	"strconv"
+	"strings"
 	"testing"
 )
 
@@ -15,240 +20,91 @@ type testCase struct {
 	reduced  bool
 }
 
-var testCases = []testCase{
-	{
-		name:     "Empty",
-		dec:      []byte{},
-		enc:      []byte{0x01},
-		sentinel: Delimiter,
-	},
-	{
-		name:     "Empty",
-		dec:      []byte{},
-		enc:      []byte{0x00},
-		sentinel: 0x01,
-	},
-	{
-		name:     "Empty",
-		dec:      []byte{},
-		enc:      []byte{0x00},
-		sentinel: 0xFF,
-	},
-	{
-		name:     "1 character",
-		dec:      []byte{'1'},
-		enc:      []byte{0x02, '1'},
-		sentinel: Delimiter,
-	},
-	{
-		name:     "1 character",
-		dec:      []byte{'1'},
-		enc:      []byte{0x01, 0x31},
-		sentinel: 0xFF,
-	},
-	{
-		name:     "1 character",
-		dec:      []byte{'A'},
-		enc:      []byte{0x01, 0x41},
-		sentinel: 0x7F,
-	},
-	{
-		name:     "1 zero",
-		dec:      []byte{0x00},
-		enc:      []byte{0x01, 0x01},
-		sentinel: Delimiter,
-	},
-	{
-		name:     "1 sentinel byte (0xFF)",
-		dec:      []byte{0xFF},
-		enc:      []byte{0x00, 0x00},
-		sentinel: 0xFF,
-	},
-	{
-		name:     "1 sentinel byte (0x01)",
-		dec:      []byte{0x01},
-		enc:      []byte{0x00, 0x00},
-		sentinel: 0x01,
-	},
-	{
-		name:     "2 zeroes",
-		dec:      []byte{0x00, 0x00},
-		enc:      []byte{0x01, 0x01, 0x01},
-		sentinel: Delimiter,
-	},
-	{
-		name:     "2 sentinel bytes (0xFF)",
-		dec:      []byte{0xFF, 0xFF},
-		enc:      []byte{0x00, 0x00, 0x00},
-		sentinel: 0xFF,
-	},
-	{
-		name:     "3 zeroes",
-		dec:      []byte{0x00, 0x00, 0x00},
-		enc:      []byte{0x01, 0x01, 0x01, 0x01},
-		sentinel: Delimiter,
-	},
-	{
-		name:     "5 characters",
-		dec:      []byte("12345"),
-		enc:      []byte("\x0612345"),
-		sentinel: Delimiter,
-	},
-	{
-		name:     "5 characters",
-		dec:      []byte{'1', '2', '3', '4', '5'},
-		enc:      []byte{0x05, 0x31, 0x32, 0x33, 0x34, 0x35},
-		sentinel: 0xFF,
-	},
-	{
-		name:     "Embedded zero",
-		dec:      []byte("12345\x006789"),
-		enc:      []byte("\x0612345\x056789"),
-		sentinel: Delimiter,
-	},
-	{
-		name:     "Embedded sentinel (0xFF)",
-		dec:      []byte{'1', '2', '3', '4', '5', 0xFF, '6', '7', '8', '9'},
-		enc:      []byte{0x05, 0x31, 0x32, 0x33, 0x34, 0x35, 0x04, 0x36, 0x37, 0x38, 0x39},
-		sentinel: 0xFF,
-	},
-	{
-		name:     "Multiple embedded 0xFF",
-		dec:      []byte{'A', 'B', 0xFF, 'C', 'D', 0xFF, 'E', 'F'},
-		enc:      []byte{0x02, 0x41, 0x42, 0x02, 0x43, 0x44, 0x02, 0x45, 0x46},
-		sentinel: 0xFF,
-	},
-	{
-		name:     "Starting and embedded zero",
-		dec:      []byte("\x0012345\x006789"),
-		enc:      []byte("\x01\x0612345\x056789"),
-		sentinel: Delimiter,
-	},
-	{
-		name: "Starting and embedded sentinel (0xFF)",
-		dec:  []byte{0xFF, '1', '2', '3', '4', '5', 0xFF, '6', '7', '8', '9'},
-		enc: []byte{0x00, 0x05, 0x31, 0x32, 0x33, 0x34, 0x35, 0x04, 0x36, 0x37, 0x38,
-			0x39},
-		sentinel: 0xFF,
-	},
-	{
-		name:     "Embedded and trailing zero",
-		dec:      []byte("12345\x006789\x00"),
-		enc:      []byte("\x0612345\x056789\x01"),
-		sentinel: Delimiter,
-	},
-	{
-		name: "Embedded and trailing sentinel (0xFF)",
-		dec:  []byte{'1', '2', '3', '4', '5', 0xFF, '6', '7', '8', '9', 0xFF},
-		enc: []byte{0x05, 0x31, 0x32, 0x33, 0x34, 0x35, 0x04, 0x36, 0x37, 0x38, 0x39,
-			0x00},
-		sentinel: 0xFF,
-	},
-	{
-		name:     "Starting, embedded and trailing sentinel (0xFF)",
-		dec:      []byte{0xFF, '1', '2', 0xFF, '3', '4', 0xFF},
-		enc:      []byte{0x00, 0x02, 0x31, 0x32, 0x02, 0x33, 0x34, 0x00},
-		sentinel: 0xFF,
-	},
-	{
-		name: "253 non-zero bytes",
-		dec: []byte("0123456789ABCDEFGHIJKLMNOPQRSTabcdefghijklmnopqrst0123456789ABCDEF" +
-			"GHIJKLMNOPQRSTabcdefghijklmnopqrst0123456789ABCDEFGHIJKLMNOPQRSTabcdef" +
-			"ghijklmnopqrst0123456789ABCDEFGHIJKLMNOPQRSTabcdefghijklmnopqrst012345" +
-			"6789ABCDEFGHIJKLMNOPQRSTabcdefghijklmnopqrst123"),
-		enc: []byte("\xfe0123456789ABCDEFGHIJKLMNOPQRSTabcdefghijklmnopqrst0123456789AB" +
-			"CDEFGHIJKLMNOPQRSTabcdefghijklmnopqrst0123456789ABCDEFGHIJKLMNOPQRSTab" +
-			"cdefghijklmnopqrst0123456789ABCDEFGHIJKLMNOPQRSTabcdefghijklmnopqrst01" +
-			"23456789ABCDEFGHIJKLMNOPQRSTabcdefghijklmnopqrst123"),
-		sentinel: Delimiter,
-	},
-	{
-		name: "254 non-zero bytes",
-		dec: []byte("0123456789ABCDEFGHIJKLMNOPQRSTabcdefghijklmnopqrst0123456789ABCDEF" +
-			"GHIJKLMNOPQRSTabcdefghijklmnopqrst0123456789ABCDEFGHIJKLMNOPQRSTabcdef" +
-			"ghijklmnopqrst0123456789ABCDEFGHIJKLMNOPQRSTabcdefghijklmnopqrst012345" +
-			"6789ABCDEFGHIJKLMNOPQRSTabcdefghijklmnopqrst1234"),
-		enc: []byte("\xff0123456789ABCDEFGHIJKLMNOPQRSTabcdefghijklmnopqrst0123456789AB" +
-			"CDEFGHIJKLMNOPQRSTabcdefghijklmnopqrst0123456789ABCDEFGHIJKLMNOPQRSTab" +
-			"cdefghijklmnopqrst0123456789ABCDEFGHIJKLMNOPQRSTabcdefghijklmnopqrst01" +
-			"23456789ABCDEFGHIJKLMNOPQRSTabcdefghijklmnopqrst1234"),
-		sentinel: Delimiter,
-	},
-	{
-		name: "255 non-zero bytes",
-		dec: []byte("0123456789ABCDEFGHIJKLMNOPQRSTabcdefghijklmnopqrst0123456789ABCDEF" +
-			"GHIJKLMNOPQRSTabcdefghijklmnopqrst0123456789ABCDEFGHIJKLMNOPQRSTabcdef" +
-			"ghijklmnopqrst0123456789ABCDEFGHIJKLMNOPQRSTabcdefghijklmnopqrst012345" +
-			"6789ABCDEFGHIJKLMNOPQRSTabcdefghijklmnopqrst12345"),
-		enc: []byte("\xff0123456789ABCDEFGHIJKLMNOPQRSTabcdefghijklmnopqrst0123456789AB" +
-			"CDEFGHIJKLMNOPQRSTabcdefghijklmnopqrst0123456789ABCDEFGHIJKLMNOPQRSTab" +
-			"cdefghijklmnopqrst0123456789ABCDEFGHIJKLMNOPQRSTabcdefghijklmnopqrst01" +
-			"23456789ABCDEFGHIJKLMNOPQRSTabcdefghijklmnopqrst1234\x025"),
-		sentinel: Delimiter,
-	},
-	{
-		name: "zero followed by 255 non-zero bytes",
-		dec: []byte("\x000123456789ABCDEFGHIJKLMNOPQRSTabcdefghijklmnopqrst0123456789AB" +
-			"CDEFGHIJKLMNOPQRSTabcdefghijklmnopqrst0123456789ABCDEFGHIJKLMNOPQRSTab" +
-			"cdefghijklmnopqrst0123456789ABCDEFGHIJKLMNOPQRSTabcdefghijklmnopqrst01" +
-			"23456789ABCDEFGHIJKLMNOPQRSTabcdefghijklmnopqrst12345"),
-		enc: []byte("\x01\xff0123456789ABCDEFGHIJKLMNOPQRSTabcdefghijklmnopqrst01234567" +
-			"89ABCDEFGHIJKLMNOPQRSTabcdefghijklmnopqrst0123456789ABCDEFGHIJKLMNOPQR" +
-			"STabcdefghijklmnopqrst0123456789ABCDEFGHIJKLMNOPQRSTabcdefghijklmnopqr" +
-			"st0123456789ABCDEFGHIJKLMNOPQRSTabcdefghijklmnopqrst1234\x025"),
-		sentinel: Delimiter,
-	},
-	{
-		name: "253 non-zero bytes followed by zero",
-		dec: []byte("0123456789ABCDEFGHIJKLMNOPQRSTabcdefghijklmnopqrst0123456789ABCDEF" +
-			"GHIJKLMNOPQRSTabcdefghijklmnopqrst0123456789ABCDEFGHIJKLMNOPQRSTabcdef" +
-			"ghijklmnopqrst0123456789ABCDEFGHIJKLMNOPQRSTabcdefghijklmnopqrst012345" +
-			"6789ABCDEFGHIJKLMNOPQRSTabcdefghijklmnopqrst123\x00"),
-		enc: []byte("\xfe0123456789ABCDEFGHIJKLMNOPQRSTabcdefghijklmnopqrst0123456789AB" +
-			"CDEFGHIJKLMNOPQRSTabcdefghijklmnopqrst0123456789ABCDEFGHIJKLMNOPQRSTab" +
-			"cdefghijklmnopqrst0123456789ABCDEFGHIJKLMNOPQRSTabcdefghijklmnopqrst01" +
-			"23456789ABCDEFGHIJKLMNOPQRSTabcdefghijklmnopqrst123\x01"),
-		sentinel: Delimiter,
-	},
-	{
-		name: "254 non-zero bytes followed by zero",
-		dec: []byte("0123456789ABCDEFGHIJKLMNOPQRSTabcdefghijklmnopqrst0123456789ABCDEF" +
-			"GHIJKLMNOPQRSTabcdefghijklmnopqrst0123456789ABCDEFGHIJKLMNOPQRSTabcdef" +
-			"ghijklmnopqrst0123456789ABCDEFGHIJKLMNOPQRSTabcdefghijklmnopqrst012345" +
-			"6789ABCDEFGHIJKLMNOPQRSTabcdefghijklmnopqrst1234\x00"),
-		enc: []byte("\xff0123456789ABCDEFGHIJKLMNOPQRSTabcdefghijklmnopqrst0123456789AB" +
-			"CDEFGHIJKLMNOPQRSTabcdefghijklmnopqrst0123456789ABCDEFGHIJKLMNOPQRSTab" +
-			"cdefghijklmnopqrst0123456789ABCDEFGHIJKLMNOPQRSTabcdefghijklmnopqrst01" +
-			"23456789ABCDEFGHIJKLMNOPQRSTabcdefghijklmnopqrst1234\x01\x01"),
-		sentinel: Delimiter,
-	},
-	{
-		name: "255 non-zero bytes followed by zero",
-		dec: []byte("0123456789ABCDEFGHIJKLMNOPQRSTabcdefghijklmnopqrst0123456789ABCDEF" +
-			"GHIJKLMNOPQRSTabcdefghijklmnopqrst0123456789ABCDEFGHIJKLMNOPQRSTabcdef" +
-			"ghijklmnopqrst0123456789ABCDEFGHIJKLMNOPQRSTabcdefghijklmnopqrst012345" +
-			"6789ABCDEFGHIJKLMNOPQRSTabcdefghijklmnopqrst12345\x00"),
-		enc: []byte("\xff0123456789ABCDEFGHIJKLMNOPQRSTabcdefghijklmnopqrst0123456789AB" +
-			"CDEFGHIJKLMNOPQRSTabcdefghijklmnopqrst0123456789ABCDEFGHIJKLMNOPQRSTab" +
-			"cdefghijklmnopqrst0123456789ABCDEFGHIJKLMNOPQRSTabcdefghijklmnopqrst01" +
-			"23456789ABCDEFGHIJKLMNOPQRSTabcdefghijklmnopqrst1234\x025\x01"),
-		sentinel: Delimiter,
-	},
-	{
-		name:     "All 0xFF bytes",
-		dec:      []byte{0xFF, 0xFF, 0xFF, 0xFF, 0xFF},
-		enc:      []byte{0x00, 0x00, 0x00, 0x00, 0x00, 0x00},
-		sentinel: 0xFF,
-	},
-	{
-		name:     "Alternating 0xFF and non-0xFF",
-		dec:      []byte{0xFF, 'A', 0xFF, 'B', 0xFF},
-		enc:      []byte{0x00, 0x01, 0x41, 0x01, 0x42, 0x00},
-		sentinel: 0xFF,
-	},
+// loadTestCasesFromFiles loads test cases from .out and matchin .in file pairs in the specified
+// directory.
+// Filename format: {name}_{XX}.out where XX is hex sentinel.
+// For reduced mode: {name}_{XX}_r.out
+func loadTestCasesFromFiles(tb testing.TB, dir string) []testCase {
+	tb.Helper()
+
+	// Pattern to match filenames: name-XX[-r].in
+	// Captures: name (group 1), sentinel hex (group 2), -r if present (group 3)
+	re := regexp.MustCompile(`^(.+)_([0-9a-f]{2})(_r)?\.out$`)
+
+	files, err := os.ReadDir(dir)
+	if err != nil {
+		tb.Fatalf("Failed to read testdata directory: %v", err)
+	}
+
+	var testCases []testCase
+
+	for _, file := range files {
+		if file.IsDir() {
+			continue
+		}
+
+		filename := file.Name()
+		if !strings.HasSuffix(filename, ".out") {
+			continue
+		}
+
+		matches := re.FindStringSubmatch(filename)
+		if matches == nil {
+			tb.Logf("Skipping file with invalid name format: %s", filename)
+			continue
+		}
+
+		// Extract components from filename
+		name := matches[1]
+		sentinelHex := matches[2]
+		reduced := matches[3] == "_r"
+
+		// Parse sentinel value from hex
+		sentinelVal, err := strconv.ParseUint(sentinelHex, 16, 8)
+		if err != nil {
+			tb.Fatalf("Failed to parse sentinel hex '%s' in %s: %v", sentinelHex, filename, err)
+		}
+		sentinel := byte(sentinelVal)
+
+		// Build display name
+		displayName := name
+		if reduced {
+			displayName += " [reduced]"
+		}
+
+		// Read output file (encoded bytes)
+		outPath := filepath.Join(dir, filename)
+		enc, err := os.ReadFile(outPath)
+		if err != nil {
+			tb.Fatalf("Failed to read %s: %v", outPath, err)
+		}
+
+		// Read input file (decoded bytes)
+		inFilename := name + ".in"
+		inPath := filepath.Join(dir, inFilename)
+		dec, err := os.ReadFile(inPath)
+		if err != nil {
+			tb.Fatalf("Failed to read %s: %v", inPath, err)
+		}
+
+		testCases = append(testCases, testCase{
+			name:     displayName,
+			dec:      dec,
+			enc:      enc,
+			sentinel: sentinel,
+			reduced:  reduced,
+		})
+	}
+
+	if len(testCases) == 0 {
+		tb.Fatalf("No test cases found in %s", dir)
+	}
+
+	return testCases
 }
 
 func TestEncode(t *testing.T) {
+	testCases := loadTestCasesFromFiles(t, "testdata")
 	for _, tc := range testCases {
 		t.Run(fmt.Sprintf("%#v", tc), func(t *testing.T) {
 			enc, err := Encode(
@@ -266,6 +122,7 @@ func TestEncode(t *testing.T) {
 }
 
 func TestDecode(t *testing.T) {
+	testCases := loadTestCasesFromFiles(t, "testdata")
 	for _, tc := range testCases {
 		t.Run(fmt.Sprintf("%#v", tc), func(t *testing.T) {
 			dec, err := Decode(
@@ -283,6 +140,7 @@ func TestDecode(t *testing.T) {
 }
 
 func TestWriter(t *testing.T) {
+	testCases := loadTestCasesFromFiles(t, "testdata")
 	// This test has to work with all sentinel values (encoded buffer is not compared)
 	for _, tc := range testCases {
 		for _, reduced := range []bool{false, true} {
@@ -320,6 +178,7 @@ func TestWriter(t *testing.T) {
 }
 
 func TestStream(t *testing.T) {
+	testCases := loadTestCasesFromFiles(t, "testdata")
 	pr, pw := io.Pipe()
 
 	go func() {
@@ -374,6 +233,7 @@ func TestStream(t *testing.T) {
 }
 
 func FuzzEncodeDecode(f *testing.F) {
+	testCases := loadTestCasesFromFiles(f, "testdata")
 	for _, tc := range testCases {
 		for s := 0; s <= 255; s++ {
 			f.Add(tc.dec, byte(s), false)
@@ -400,6 +260,7 @@ func FuzzEncodeDecode(f *testing.F) {
 }
 
 func FuzzChainWriter(f *testing.F) {
+	testCases := loadTestCasesFromFiles(f, "testdata")
 	for _, tc := range testCases {
 		for del := 0; del <= 255; del++ {
 			f.Add(tc.dec, byte(del), false)
@@ -506,6 +367,7 @@ func (lw *LimitedWriter) Write(p []byte) (int, error) {
 }
 
 func TestEncodeError(t *testing.T) {
+	testCases := loadTestCasesFromFiles(t, "testdata")
 	for _, tc := range testCases {
 		t.Run(fmt.Sprintf("%#v", tc), func(t *testing.T) {
 			e := NewEncoder(
@@ -526,6 +388,7 @@ func TestEncodeError(t *testing.T) {
 }
 
 func TestDecodeError(t *testing.T) {
+	testCases := loadTestCasesFromFiles(t, "testdata")
 	for _, tc := range testCases {
 		t.Run(fmt.Sprintf("%#v", tc), func(t *testing.T) {
 			// The empty string is expected to have no writes
