@@ -1,0 +1,10 @@
+[package]
+name = "rust"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+cobs-codec = "0.1.0"
+bytes = "1"
+tokio-util = { version = "0.7", features = ["codec"] }
+clap = { version = "4.5.53", features = ["derive"] }
