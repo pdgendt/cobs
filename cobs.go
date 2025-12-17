@@ -52,13 +52,6 @@ type Decoder struct {
 	codeIndex byte
 }
 
-func maxCode(sentinel byte) byte {
-	if sentinel == 0xff {
-		return 0xfe
-	}
-	return 0xff
-}
-
 // NewEncoder returns an Encoder that writes encoded data to w.
 func NewEncoder(w io.Writer, opts ...option) *Encoder {
 	e := &Encoder{
@@ -71,48 +64,45 @@ func NewEncoder(w io.Writer, opts ...option) *Encoder {
 		opt(&e.config)
 	}
 
-	e.buf[0] = 0
-	e.checkLen()
+	e.buf[0] = 1
 
 	return e
 }
 
 func (e *Encoder) finish() error {
+	if e.sentinel != Delimiter {
+		for i := range e.buf {
+			e.buf[i] ^= e.sentinel
+		}
+	}
+
 	if _, err := e.w.Write(e.buf); err != nil {
 		return err
 	}
 
 	// reset buffer
 	e.buf = e.buf[:1]
-	e.buf[0] = 0
-	e.checkLen()
+	e.buf[0] = 1
 
 	return nil
-}
-
-func (e *Encoder) checkLen() {
-	if e.buf[0] == e.sentinel {
-		e.buf[0]++
-	}
 }
 
 // WriteByte encodes a single byte c. If a group is finished
 // it is written to w.
 func (e *Encoder) WriteByte(c byte) error {
 	// Finish if group is full
-	if e.buf[0] == maxCode(e.sentinel) {
+	if e.buf[0] == 0xff {
 		if err := e.finish(); err != nil {
 			return err
 		}
 	}
 
-	if c == e.sentinel {
+	if c == Delimiter {
 		return e.finish()
 	}
 
 	e.buf = append(e.buf, c)
 	e.buf[0]++
-	e.checkLen()
 
 	return nil
 }
@@ -155,12 +145,11 @@ func NewDecoder(w io.Writer, opts ...option) *Decoder {
 		config:    config{sentinel: Delimiter},
 		w:         w,
 		codeIndex: 0,
+		code:      0xff,
 	}
 	for _, opt := range opts {
 		opt(&d.config)
 	}
-
-	d.code = maxCode(d.sentinel)
 
 	return d
 }
@@ -168,14 +157,17 @@ func NewDecoder(w io.Writer, opts ...option) *Decoder {
 // WriteByte decodes a single byte c. If c is the sentinel value the decoder
 // state is validated and either EOD or ErrUnexpectedEOD is returned.
 func (d *Decoder) WriteByte(c byte) error {
+	// XOR with the sentinel first
+	c ^= d.sentinel
+
 	// Got a sentinel
-	if c == d.sentinel {
+	if c == Delimiter {
 		if d.codeIndex != 0 {
 			return ErrUnexpectedEOD
 		}
 
 		// Reset state
-		d.code = maxCode(d.sentinel)
+		d.code = 0xff
 
 		return EOD
 	}
@@ -191,17 +183,14 @@ func (d *Decoder) WriteByte(c byte) error {
 
 	d.codeIndex = c
 
-	if d.code != maxCode(d.sentinel) {
-		if _, err := d.w.Write([]byte{d.sentinel}); err != nil {
+	if d.code != 0xff {
+		if _, err := d.w.Write([]byte{Delimiter}); err != nil {
 			return err
 		}
 	}
 
 	d.code = d.codeIndex
-	// If our encoded length is larger than the sentinel, we need to subtract one.
-	if d.codeIndex > d.sentinel {
-		d.codeIndex--
-	}
+	d.codeIndex--
 
 	return nil
 }
