@@ -46,7 +46,7 @@ func main() {
 		panic(err)
 	}
 
-	if dec.NeedsMoreData() {
-		panic(cobs.ErrIncompleteFrame)
+	if err := dec.Close(); err != nil {
+		panic(err)
 	}
 }
