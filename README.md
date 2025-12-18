@@ -76,6 +76,11 @@ appears in encoded data and is used for packet framing. You can configure a cust
 value using the `WithSentinel()` option. This is useful when your protocol already uses
 zero bytes, or when you need a different delimiter for packet framing.
 
+When a custom sentinel value is used, the implementation applies an XOR operation with
+the sentinel value on the encoded data after encoding and before decoding. This transforms
+the standard COBS delimiters (0x00) to the custom sentinel value, allowing any byte to be
+used as the packet delimiter.
+
 ```go
 // Use 0xFF as the sentinel instead of 0x00
 enc := cobs.NewEncoder(w, cobs.WithSentinel(0xFF))
