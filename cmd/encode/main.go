@@ -43,7 +43,10 @@ func main() {
 		os.Exit(1)
 	}
 
-	enc := cobs.NewEncoder(os.Stdout, cobs.WithSentinel(byte(sentinel)))
+	enc := cobs.NewEncoder(
+		os.Stdout,
+		cobs.WithSentinel(byte(sentinel)),
+		cobs.WithDelimiterOnClose(appendDelim))
 
 	if _, err := io.Copy(enc, os.Stdin); err != nil {
 		panic(err)
@@ -51,9 +54,5 @@ func main() {
 
 	if err := enc.Close(); err != nil {
 		panic(err)
-	}
-
-	if appendDelim {
-		os.Stdout.Write([]byte{byte(sentinel)})
 	}
 }
