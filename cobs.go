@@ -225,6 +225,15 @@ func (d *Decoder) NeedsMoreData() bool {
 	return d.codeIndex != 0
 }
 
+// Close returns an error if the decoder expects more data.
+func (d *Decoder) Close() error {
+	if d.NeedsMoreData() {
+		return ErrIncompleteFrame
+	}
+
+	return nil
+}
+
 // Decode decodes and returns a byte slice.
 func Decode(data []byte, opts ...option) ([]byte, error) {
 	buf := bytes.NewBuffer(make([]byte, 0, len(data)))
@@ -234,9 +243,7 @@ func Decode(data []byte, opts ...option) ([]byte, error) {
 		return buf.Bytes(), err
 	}
 
-	if d.NeedsMoreData() {
-		return buf.Bytes(), ErrIncompleteFrame
-	}
+	err := d.Close()
 
-	return buf.Bytes(), nil
+	return buf.Bytes(), err
 }
