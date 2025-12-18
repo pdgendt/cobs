@@ -23,7 +23,8 @@ var ErrUnexpectedEOD = errors.New("unexpected EOD")
 var ErrIncompleteFrame = errors.New("frame incomplete")
 
 type config struct {
-	sentinel byte
+	sentinel         byte
+	delimiterOnClose bool
 }
 
 type option func(*config)
@@ -32,6 +33,13 @@ type option func(*config)
 func WithSentinel(sentinel byte) option {
 	return func(c *config) {
 		c.sentinel = sentinel
+	}
+}
+
+// WithDelimiterOnClose configures the encoder to append a sentinel delimiter on close.
+func WithDelimiterOnClose(enabled bool) option {
+	return func(c *config) {
+		c.delimiterOnClose = enabled
 	}
 }
 
@@ -69,7 +77,7 @@ func NewEncoder(w io.Writer, opts ...option) *Encoder {
 	return e
 }
 
-func (e *Encoder) finish() error {
+func (e *Encoder) finish(close bool) error {
 	if e.sentinel != Delimiter {
 		for i := range e.buf {
 			e.buf[i] ^= e.sentinel
@@ -78,6 +86,12 @@ func (e *Encoder) finish() error {
 
 	if _, err := e.w.Write(e.buf); err != nil {
 		return err
+	}
+
+	if close && e.delimiterOnClose {
+		if _, err := e.w.Write([]byte{e.sentinel}); err != nil {
+			return err
+		}
 	}
 
 	// reset buffer
@@ -92,13 +106,13 @@ func (e *Encoder) finish() error {
 func (e *Encoder) WriteByte(c byte) error {
 	// Finish if group is full
 	if e.buf[0] == 0xff {
-		if err := e.finish(); err != nil {
+		if err := e.finish(false); err != nil {
 			return err
 		}
 	}
 
 	if c == Delimiter {
-		return e.finish()
+		return e.finish(false)
 	}
 
 	e.buf = append(e.buf, c)
@@ -121,7 +135,7 @@ func (e *Encoder) Write(p []byte) (int, error) {
 // Close has to be called after writing a full frame and
 // will write the last group.
 func (e *Encoder) Close() error {
-	return e.finish()
+	return e.finish(true)
 }
 
 // Encode encodes and returns a byte slice.

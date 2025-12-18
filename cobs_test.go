@@ -173,7 +173,7 @@ func TestStream(t *testing.T) {
 		defer pw.Close()
 
 		for _, tc := range testCases {
-			e := NewEncoder(pw, WithSentinel(tc.sentinel))
+			e := NewEncoder(pw, WithSentinel(tc.sentinel), WithDelimiterOnClose(true))
 			_, err := e.Write(tc.dec)
 			if err != nil {
 				t.Errorf("stream encode error: %v", err)
@@ -181,11 +181,6 @@ func TestStream(t *testing.T) {
 			err = e.Close()
 			if err != nil {
 				t.Errorf("stream close error: %v", err)
-			}
-
-			_, err = pw.Write([]byte{tc.sentinel})
-			if err != nil {
-				t.Errorf("stream delimiter error: %v", err)
 			}
 		}
 	}()
@@ -347,8 +342,9 @@ func TestEncodeError(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(fmt.Sprintf("%s (%d)", tc.name, tc.sentinel), func(t *testing.T) {
 			e := NewEncoder(
-				&LimitedWriter{io.Discard, 0, io.EOF},
-				WithSentinel(tc.sentinel))
+				&LimitedWriter{io.Discard, 1, io.EOF},
+				WithSentinel(tc.sentinel),
+				WithDelimiterOnClose(true))
 
 			_, err := e.Write(tc.dec)
 			// err can be nil if no groups have been flushed, call close
