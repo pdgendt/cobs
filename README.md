@@ -91,6 +91,40 @@ encoded, _ := cobs.Encode(data, cobs.WithSentinel(0xFF))
 decoded, _ := cobs.Decode(encoded, cobs.WithSentinel(0xFF))
 ```
 
+### COBS/R (COBS Reduced)
+
+COBS/R is a variant of the COBS encoding that provides slightly better encoding efficiency
+by saving one byte in certain cases. In standard COBS, the overhead byte at the start of each
+group indicates where the next zero byte would have been. In COBS/R, if the overhead byte value
+is less than the last data byte in a group, the overhead byte is replaced with that last data byte,
+and the last data byte is omitted. This can save one byte when encoding data that ends with a
+byte value larger than the group size.
+
+You can enable COBS/R using the `WithReduced()` option:
+
+```go
+// Use COBS/R encoding
+enc := cobs.NewEncoder(w, cobs.WithReduced(true))
+dec := cobs.NewDecoder(w, cobs.WithReduced(true))
+
+// Or with the helper functions
+encoded, _ := cobs.Encode(data, cobs.WithReduced(true))
+decoded, _ := cobs.Decode(encoded, cobs.WithReduced(true))
+```
+
+COBS/R can be combined with custom sentinel values:
+
+```go
+// Use both COBS/R and a custom sentinel
+encoded, _ := cobs.Encode(data, cobs.WithReduced(true), cobs.WithSentinel(0xFF))
+decoded, _ := cobs.Decode(encoded, cobs.WithReduced(true), cobs.WithSentinel(0xFF))
+```
+
+**Note:** When using COBS/R decoding, you must call `Close()` on the decoder to flush the final
+byte, as the reduced encoding may hold back the last byte until it knows encoding is complete.
+
+For more information about COBS/R, see the [Python COBS documentation](https://pythonhosted.org/cobs/cobsr-intro.html).
+
 ## CLI tools
 
 The [cmd/](cmd/) directory contains simple encode/decode command line tools that take in data
@@ -115,3 +149,19 @@ Hello world
 
 The `encode` command also supports the `-d` (or `-del`) flag to append the sentinel delimiter
 after the encoded data.
+
+### COBS/R in CLI
+
+Both `encode` and `decode` commands support the `-r` (or `-reduced`) flag to enable COBS/R encoding:
+
+```shell
+$ echo "Hello world" | go run cmd/encode/main.go -r | go run cmd/decode/main.go -r
+Hello world
+```
+
+The `-r` flag can be combined with custom sentinel values:
+
+```shell
+$ echo "Hello world" | go run cmd/encode/main.go -r -s 0xFF | go run cmd/decode/main.go -r -s 0xFF
+Hello world
+```
