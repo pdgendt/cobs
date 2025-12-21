@@ -25,6 +25,7 @@ var ErrIncompleteFrame = errors.New("frame incomplete")
 type config struct {
 	sentinel         byte
 	delimiterOnClose bool
+	reduced          bool
 }
 
 type option func(*config)
@@ -33,6 +34,13 @@ type option func(*config)
 func WithSentinel(sentinel byte) option {
 	return func(c *config) {
 		c.sentinel = sentinel
+	}
+}
+
+// WithReduced configures the encoder/decoder to run COBS/R.
+func WithReduced(enabled bool) option {
+	return func(c *config) {
+		c.reduced = enabled
 	}
 }
 
@@ -78,6 +86,15 @@ func NewEncoder(w io.Writer, opts ...option) *Encoder {
 }
 
 func (e *Encoder) finish(close bool) error {
+	// From https://pythonhosted.org/cobs/cobsr-intro.html
+	// Replace the overhead byte with the last data byte if it is larger than
+	// the running buffer size.
+	if close && e.reduced && len(e.buf) > 1 && e.buf[0] < e.buf[len(e.buf)-1] {
+		// Put the last element as the overhead byte
+		e.buf[0] = e.buf[len(e.buf)-1]
+		e.buf = e.buf[:len(e.buf)-1]
+	}
+
 	if e.sentinel != Delimiter {
 		for i := range e.buf {
 			e.buf[i] ^= e.sentinel
@@ -168,6 +185,19 @@ func NewDecoder(w io.Writer, opts ...option) *Decoder {
 	return d
 }
 
+func (d *Decoder) flushReduced() error {
+	// Check if we are decoding a reduced buffer
+	if d.reduced && d.codeIndex > 0 {
+		_, err := d.w.Write([]byte{d.code})
+		if err != nil {
+			return err
+		}
+		d.codeIndex = 0
+	}
+
+	return nil
+}
+
 // WriteByte decodes a single byte c. If c is the sentinel value the decoder
 // state is validated and either EOD or ErrUnexpectedEOD is returned.
 func (d *Decoder) WriteByte(c byte) error {
@@ -176,6 +206,11 @@ func (d *Decoder) WriteByte(c byte) error {
 
 	// Got a sentinel
 	if c == Delimiter {
+		err := d.flushReduced()
+		if err != nil {
+			return err
+		}
+
 		if d.codeIndex != 0 {
 			return ErrUnexpectedEOD
 		}
@@ -225,8 +260,14 @@ func (d *Decoder) NeedsMoreData() bool {
 	return d.codeIndex != 0
 }
 
-// Close returns an error if the decoder expects more data.
+// Close flushes the last byte in case of COBS reduced (COBS/R) and will
+// return an error if the decoder expects more data.
 func (d *Decoder) Close() error {
+	err := d.flushReduced()
+	if err != nil {
+		return err
+	}
+
 	if d.NeedsMoreData() {
 		return ErrIncompleteFrame
 	}
