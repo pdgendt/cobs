@@ -1,0 +1,16 @@
+version = 1
+revision = 3
+requires-python = ">=3.13"
+
+[manifest]
+requirements = [{ name = "cobs", specifier = "==1.2.2" }]
+
+[[package]]
+name = "cobs"
+version = "1.2.2"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/34/ef/ea149311227a4fc3160cc885fce06da7c7d76782a308ef070b8065c69953/cobs-1.2.2.tar.gz", hash = "sha256:dbdd5e32111d72786f83d0c269215dcd6ac629b1ac1962c6878221f3b2ca98da", size = 14582, upload-time = "2025-07-20T01:08:35.434Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/b4/df/7f07559954d53d09680aa4f5c72db999e7643253e2ca4e431023fe5c1c40/cobs-1.2.2-cp313-cp313-win32.whl", hash = "sha256:a8fdf6ca70247e7271caea6f2f6f9c0343f5e872e2fd47e21f71831fa9ababa8", size = 26401, upload-time = "2025-07-20T01:08:32.508Z" },
+    { url = "https://files.pythonhosted.org/packages/0c/00/5b063105ff567bb7fb72c3cd3e96116a3889381fa2c0e7747497391dbecc/cobs-1.2.2-cp313-cp313-win_amd64.whl", hash = "sha256:fe3f7194d5fbbc02e8fb03d26ad626a33fa0d420b50d66ed60ac4bf516322d8e", size = 27774, upload-time = "2025-07-20T01:08:33.692Z" },
+]
