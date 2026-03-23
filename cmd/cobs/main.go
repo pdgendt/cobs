@@ -4,6 +4,7 @@ Cobs reads from standard input, and writes encoded or decoded data to standard o
 Usage:
 
 	cobs <command> [flags]
+	cobs -V/--version
 
 The commands are:
 
@@ -34,9 +35,17 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"runtime/debug"
 
 	"github.com/pdgendt/cobs"
 )
+
+func version() string {
+	if info, ok := debug.ReadBuildInfo(); ok && info.Main.Version != "" {
+		return info.Main.Version
+	}
+	return "(devel)"
+}
 
 type commonFlags struct {
 	sentinel int
@@ -75,6 +84,10 @@ func main() {
 	}
 
 	switch os.Args[1] {
+	case "-V", "--version":
+		fmt.Println(version())
+		return
+
 	case "encode":
 		encodeCmd.Parse(os.Args[2:])
 		if err := encFlags.validate(); err != nil {
