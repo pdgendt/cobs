@@ -41,19 +41,14 @@ import (
 	"github.com/pdgendt/cobs"
 )
 
-func fatal(err error) {
-	fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-	os.Exit(1)
-}
-
-func usage() {
-	fmt.Fprintln(os.Stderr, "Usage: cobs <command> [flags]")
-	fmt.Fprintln(os.Stderr, "       cobs -h/--help")
-	fmt.Fprintln(os.Stderr, "       cobs -V/--version")
-	fmt.Fprintln(os.Stderr, "\nCommands:")
-	fmt.Fprintln(os.Stderr, "  encode    Encode data using COBS")
-	fmt.Fprintln(os.Stderr, "  decode    Decode COBS-encoded data")
-	fmt.Fprintln(os.Stderr, "\nRun 'cobs <command> -h' for command-specific flags.")
+func usage(w io.Writer) {
+	fmt.Fprintln(w, "Usage: cobs <command> [flags]")
+	fmt.Fprintln(w, "       cobs -h/--help")
+	fmt.Fprintln(w, "       cobs -V/--version")
+	fmt.Fprintln(w, "\nCommands:")
+	fmt.Fprintln(w, "  encode    Encode data using COBS")
+	fmt.Fprintln(w, "  decode    Decode COBS-encoded data")
+	fmt.Fprintln(w, "\nRun 'cobs <command> -h' for command-specific flags.")
 }
 
 func version() string {
@@ -77,78 +72,99 @@ func (f *commonFlags) register(fs *flag.FlagSet) {
 
 func (f *commonFlags) validate() error {
 	if f.sentinel < 0 || f.sentinel > 255 {
-		return errors.New("sentinel value (%d) must be in [0x00, 0xFF]")
+		return errors.New("sentinel value must be in [0x00, 0xFF]")
 	}
 
 	return nil
 }
 
-func main() {
+func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	var encFlags, decFlags commonFlags
 
-	encodeCmd := flag.NewFlagSet("encode", flag.ExitOnError)
+	encodeCmd := flag.NewFlagSet("encode", flag.ContinueOnError)
+	encodeCmd.SetOutput(stderr)
 	encFlags.register(encodeCmd)
 	appendDelim := encodeCmd.Bool("del", false, "Append a delimiter")
 	encodeCmd.BoolVar(appendDelim, "d", false, "Append a delimiter")
 
-	decodeCmd := flag.NewFlagSet("decode", flag.ExitOnError)
+	decodeCmd := flag.NewFlagSet("decode", flag.ContinueOnError)
+	decodeCmd.SetOutput(stderr)
 	decFlags.register(decodeCmd)
 
-	if len(os.Args) < 2 {
-		usage()
-		os.Exit(1)
+	if len(args) == 0 {
+		usage(stderr)
+		return 1
 	}
 
-	switch os.Args[1] {
+	switch args[0] {
 	case "-h", "--help":
-		usage()
+		usage(stderr)
+		return 0
 
 	case "-V", "--version":
-		fmt.Println(version())
+		fmt.Fprintln(stdout, version())
+		return 0
 
 	case "encode":
-		encodeCmd.Parse(os.Args[2:])
+		if err := encodeCmd.Parse(args[1:]); err != nil {
+			return 1
+		}
 		if err := encFlags.validate(); err != nil {
-			fatal(err)
+			fmt.Fprintf(stderr, "Error: %v\n", err)
+			return 1
 		}
 
 		enc := cobs.NewEncoder(
-			os.Stdout,
+			stdout,
 			cobs.WithSentinel(byte(encFlags.sentinel)),
 			cobs.WithDelimiterOnClose(*appendDelim),
 			cobs.WithReduced(encFlags.reduced))
 
-		if _, err := io.Copy(enc, os.Stdin); err != nil {
-			fatal(err)
+		if _, err := io.Copy(enc, stdin); err != nil {
+			fmt.Fprintf(stderr, "Error: %v\n", err)
+			return 1
 		}
 
 		if err := enc.Close(); err != nil {
-			fatal(err)
+			fmt.Fprintf(stderr, "Error: %v\n", err)
+			return 1
 		}
 
-	case "decode":
-		decodeCmd.Parse(os.Args[2:])
+		return 0
 
+	case "decode":
+		if err := decodeCmd.Parse(args[1:]); err != nil {
+			return 1
+		}
 		if err := decFlags.validate(); err != nil {
-			fatal(err)
+			fmt.Fprintf(stderr, "Error: %v\n", err)
+			return 1
 		}
 
 		dec := cobs.NewDecoder(
-			os.Stdout,
+			stdout,
 			cobs.WithSentinel(byte(decFlags.sentinel)),
 			cobs.WithReduced(decFlags.reduced))
 
-		if _, err := io.Copy(dec, os.Stdin); err != nil && err != cobs.EOD {
-			fatal(err)
+		if _, err := io.Copy(dec, stdin); err != nil && err != cobs.EOD {
+			fmt.Fprintf(stderr, "Error: %v\n", err)
+			return 1
 		}
 
 		if err := dec.Close(); err != nil {
-			fatal(err)
+			fmt.Fprintf(stderr, "Error: %v\n", err)
+			return 1
 		}
 
+		return 0
+
 	default:
-		fmt.Fprintf(os.Stderr, "Unknown command: %s\n", os.Args[1])
-		usage()
-		os.Exit(1)
+		fmt.Fprintf(stderr, "Unknown command: %s\n", args[0])
+		usage(stderr)
+		return 1
 	}
+}
+
+func main() {
+	os.Exit(run(os.Args[1:], os.Stdin, os.Stdout, os.Stderr))
 }
