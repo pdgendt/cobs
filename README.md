@@ -31,7 +31,7 @@ import (
 func main() {
 	enc, _ := cobs.Encode([]byte{'H', 'e', 'l', 'l', 'o', 0x00, 'w', 'o', 'r', 'l', 'd', '!'})
 
-	os.Stdout.write(enc)
+	os.Stdout.Write(enc)
 }
 ```
 
