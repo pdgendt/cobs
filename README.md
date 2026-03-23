@@ -125,43 +125,43 @@ byte, as the reduced encoding may hold back the last byte until it knows encodin
 
 For more information about COBS/R, see the [Python COBS documentation](https://pythonhosted.org/cobs/cobsr-intro.html).
 
-## CLI tools
+## CLI tool
 
-The [cmd/](cmd/) directory contains simple encode/decode command line tools that take in data
-from `stdin` and writes it to `stdout`.
+The [cmd/cobs/](cmd/cobs/) directory contains a command line tool with `encode` and `decode`
+subcommands that take in data from `stdin` and write it to `stdout`.
 
 This can be used to pipe encoded/decoded data to other processes.
 
 ```shell
-$ echo "Hello world" | go run cmd/encode/main.go | go run cmd/decode/main.go
+$ echo "Hello world" | go run cmd/cobs/main.go encode | go run cmd/cobs/main.go decode
 Hello world
 ```
 
 ### Custom Sentinel in CLI
 
-Both `encode` and `decode` commands support the `-s` (or `-sentinel`) flag to specify a custom
+Both `encode` and `decode` subcommands support the `-s` (or `-sentinel`) flag to specify a custom
 sentinel value:
 
 ```shell
-$ echo "Hello world" | go run cmd/encode/main.go -s 0xFF | go run cmd/decode/main.go -s 0xFF
+$ echo "Hello world" | go run cmd/cobs/main.go encode -s 0xFF | go run cmd/cobs/main.go decode -s 0xFF
 Hello world
 ```
 
-The `encode` command also supports the `-d` (or `-del`) flag to append the sentinel delimiter
+The `encode` subcommand also supports the `-d` (or `-del`) flag to append the sentinel delimiter
 after the encoded data.
 
 ### COBS/R in CLI
 
-Both `encode` and `decode` commands support the `-r` (or `-reduced`) flag to enable COBS/R encoding:
+Both `encode` and `decode` subcommands support the `-r` (or `-reduced`) flag to enable COBS/R encoding:
 
 ```shell
-$ echo "Hello world" | go run cmd/encode/main.go -r | go run cmd/decode/main.go -r
+$ echo "Hello world" | go run cmd/cobs/main.go encode -r | go run cmd/cobs/main.go decode -r
 Hello world
 ```
 
 The `-r` flag can be combined with custom sentinel values:
 
 ```shell
-$ echo "Hello world" | go run cmd/encode/main.go -r -s 0xFF | go run cmd/decode/main.go -r -s 0xFF
+$ echo "Hello world" | go run cmd/cobs/main.go encode -r -s 0xFF | go run cmd/cobs/main.go decode -r -s 0xFF
 Hello world
 ```
