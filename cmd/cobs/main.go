@@ -4,6 +4,7 @@ Cobs reads from standard input, and writes encoded or decoded data to standard o
 Usage:
 
 	cobs <command> [flags]
+	cobs -h/--help
 	cobs -V/--version
 
 The commands are:
@@ -45,6 +46,16 @@ func fatal(err error) {
 	os.Exit(1)
 }
 
+func usage() {
+	fmt.Fprintln(os.Stderr, "Usage: cobs <command> [flags]")
+	fmt.Fprintln(os.Stderr, "       cobs -h/--help")
+	fmt.Fprintln(os.Stderr, "       cobs -V/--version")
+	fmt.Fprintln(os.Stderr, "\nCommands:")
+	fmt.Fprintln(os.Stderr, "  encode    Encode data using COBS")
+	fmt.Fprintln(os.Stderr, "  decode    Decode COBS-encoded data")
+	fmt.Fprintln(os.Stderr, "\nRun 'cobs <command> -h' for command-specific flags.")
+}
+
 func version() string {
 	if info, ok := debug.ReadBuildInfo(); ok && info.Main.Version != "" {
 		return info.Main.Version
@@ -84,14 +95,16 @@ func main() {
 	decFlags.register(decodeCmd)
 
 	if len(os.Args) < 2 {
-		fmt.Fprintln(os.Stderr, "Usage: cobs <encode|decode> [flags]")
+		usage()
 		os.Exit(1)
 	}
 
 	switch os.Args[1] {
+	case "-h", "--help":
+		usage()
+
 	case "-V", "--version":
 		fmt.Println(version())
-		return
 
 	case "encode":
 		encodeCmd.Parse(os.Args[2:])
@@ -134,7 +147,8 @@ func main() {
 		}
 
 	default:
-		fmt.Fprintf(os.Stderr, "Unknown command: %s\nUsage: cobs <encode|decode> [flags]\n", os.Args[1])
+		fmt.Fprintf(os.Stderr, "Unknown command: %s\n", os.Args[1])
+		usage()
 		os.Exit(1)
 	}
 }
