@@ -25,7 +25,7 @@ Encode flags:
 	    Append the encoded data with the sentinel delimiter.
 
 When decode reads the sentinel delimiter it will stop processing data. If malformed encoded data
-is passed the program will panic.
+is passed the program will exit with an error.
 */
 package main
 
@@ -39,6 +39,11 @@ import (
 
 	"github.com/pdgendt/cobs"
 )
+
+func fatal(err error) {
+	fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+	os.Exit(1)
+}
 
 func version() string {
 	if info, ok := debug.ReadBuildInfo(); ok && info.Main.Version != "" {
@@ -101,11 +106,11 @@ func main() {
 			cobs.WithReduced(encFlags.reduced))
 
 		if _, err := io.Copy(enc, os.Stdin); err != nil {
-			panic(err)
+			fatal(err)
 		}
 
 		if err := enc.Close(); err != nil {
-			panic(err)
+			fatal(err)
 		}
 
 	case "decode":
@@ -121,11 +126,11 @@ func main() {
 			cobs.WithReduced(decFlags.reduced))
 
 		if _, err := io.Copy(dec, os.Stdin); err != nil && err != cobs.EOD {
-			panic(err)
+			fatal(err)
 		}
 
 		if err := dec.Close(); err != nil {
-			panic(err)
+			fatal(err)
 		}
 
 	default:
