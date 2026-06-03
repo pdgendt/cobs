@@ -19,7 +19,7 @@ var EOD = errors.New("EOD")
 // ErrUnexpectedEOD means that a delimiter was encountered in a malformed frame.
 var ErrUnexpectedEOD = errors.New("unexpected EOD")
 
-// ErrIncompleteData means a decoder was closed with an incomplete frame.
+// ErrIncompleteFrame means a decoder was closed with an incomplete frame.
 var ErrIncompleteFrame = errors.New("frame incomplete")
 
 type config struct {
