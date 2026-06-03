@@ -3,12 +3,11 @@ package main
 import (
 	"bytes"
 	"fmt"
-	"os"
 	"path/filepath"
-	"regexp"
-	"strconv"
 	"strings"
 	"testing"
+
+	"github.com/pdgendt/cobs/internal/testutil"
 )
 
 func TestRunUsage(t *testing.T) {
@@ -271,80 +270,37 @@ func TestRunCloseErrors(t *testing.T) {
 }
 
 func TestRunTestdata(t *testing.T) {
-	testdataDir := filepath.Join("..", "..", "testdata")
+	cases := testutil.Load(t, filepath.Join("..", "..", "testdata"))
 
-	re := regexp.MustCompile(`^(.+)_([0-9a-f]{2})(_r)?\.out$`)
+	for _, tc := range cases {
+		testName := fmt.Sprintf("%s (sentinel=0x%02x, reduced=%v)", tc.Name, tc.Sentinel, tc.Reduced)
 
-	files, err := os.ReadDir(testdataDir)
-	if err != nil {
-		t.Fatalf("Failed to read testdata directory: %v", err)
-	}
-
-	for _, file := range files {
-		if file.IsDir() || !strings.HasSuffix(file.Name(), ".out") {
-			continue
+		args := []string{"-s", fmt.Sprintf("%d", tc.Sentinel)}
+		if tc.Reduced {
+			args = append(args, "-r")
 		}
-
-		matches := re.FindStringSubmatch(file.Name())
-		if matches == nil {
-			continue
-		}
-
-		name := matches[1]
-		sentinelHex := matches[2]
-		reduced := matches[3] == "_r"
-
-		sentinel, err := strconv.ParseUint(sentinelHex, 16, 8)
-		if err != nil {
-			t.Fatalf("Failed to parse sentinel hex %q: %v", sentinelHex, err)
-		}
-
-		inFile := filepath.Join(testdataDir, name+".in")
-		outFile := filepath.Join(testdataDir, file.Name())
-
-		inData, err := os.ReadFile(inFile)
-		if err != nil {
-			t.Fatalf("Failed to read %s: %v", inFile, err)
-		}
-
-		wantEncoded, err := os.ReadFile(outFile)
-		if err != nil {
-			t.Fatalf("Failed to read %s: %v", outFile, err)
-		}
-
-		testName := fmt.Sprintf("%s (sentinel=0x%s, reduced=%v)", name, sentinelHex, reduced)
 
 		t.Run(testName+"/encode", func(t *testing.T) {
-			args := []string{"encode", "-s", fmt.Sprintf("%d", sentinel)}
-			if reduced {
-				args = append(args, "-r")
-			}
-
 			var stdout, stderr bytes.Buffer
-			code := run(args, bytes.NewReader(inData), &stdout, &stderr)
+			code := run(append([]string{"encode"}, args...), bytes.NewReader(tc.Decoded), &stdout, &stderr)
 			if code != 0 {
 				t.Fatalf("encode exit %d: %s", code, stderr.String())
 			}
 
-			if !bytes.Equal(stdout.Bytes(), wantEncoded) {
-				t.Errorf("encode mismatch:\n  got  %v\n  want %v", stdout.Bytes(), wantEncoded)
+			if !bytes.Equal(stdout.Bytes(), tc.Encoded) {
+				t.Errorf("encode mismatch:\n  got  %v\n  want %v", stdout.Bytes(), tc.Encoded)
 			}
 		})
 
 		t.Run(testName+"/decode", func(t *testing.T) {
-			args := []string{"decode", "-s", fmt.Sprintf("%d", sentinel)}
-			if reduced {
-				args = append(args, "-r")
-			}
-
 			var stdout, stderr bytes.Buffer
-			code := run(args, bytes.NewReader(wantEncoded), &stdout, &stderr)
+			code := run(append([]string{"decode"}, args...), bytes.NewReader(tc.Encoded), &stdout, &stderr)
 			if code != 0 {
 				t.Fatalf("decode exit %d: %s", code, stderr.String())
 			}
 
-			if !bytes.Equal(stdout.Bytes(), inData) {
-				t.Errorf("decode mismatch:\n  got  %v\n  want %v", stdout.Bytes(), inData)
+			if !bytes.Equal(stdout.Bytes(), tc.Decoded) {
+				t.Errorf("decode mismatch:\n  got  %v\n  want %v", stdout.Bytes(), tc.Decoded)
 			}
 		})
 	}

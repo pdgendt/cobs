@@ -1,5 +1,8 @@
 # Let CodeCov post a comment in PRs for the coverage of changes.
 
+ignore:
+  - "internal/testutil/**"
+
 comment:
   layout: "reach, diff, flags, files"
   behavior: default
