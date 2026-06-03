@@ -12,8 +12,8 @@ const (
 	Delimiter = byte(0x00) // default packet framing delimiter.
 )
 
-// EOD is the error returned when decoding and a delimiter was written.
-// Functions return EOD to signal a graceful end of a frame.
+// EOD is returned by Decoder.WriteByte when the sentinel byte ends a frame.
+// It signals a graceful end of a frame, analogous to io.EOF for streams.
 var EOD = errors.New("EOD")
 
 // ErrUnexpectedEOD means that a delimiter was encountered in a malformed frame.
